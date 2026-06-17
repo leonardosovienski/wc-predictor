@@ -1,0 +1,17 @@
+# Dados de runtime (o v2 LÊ a produção read-only; nada de dado versionado)
+data/
+*.db
+*.log
+
+# Bytecode / cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Ambientes
+.venv/
+env/
+
+# SO
+.DS_Store
+Thumbs.db

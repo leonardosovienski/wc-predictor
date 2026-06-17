@@ -1,0 +1,15 @@
+{
+  "files": {
+    "__init__.py": "79466a1c8f9ce0ee3eafe0e452e9eed9c55a7c8f5a3051c7e8380c5f4e1b2206",
+    "infra.py": "ab5d8bd563b2d3eed1706b326df4a7365268ad745125a6dc135092254cafa81e",
+    "net.py": "9e6d35356447741cc1cf9f419188a8388458ae6af68d1c01c8645e64560f792a",
+    "obs.py": "3b65d6f13b3fa7016acf7e8e830c7b17dfda00c225c4bb3e7f836d4562c73e40",
+    "replay.py": "3574cc26edc2a91e720d69d0d0e6ed781f17b1045b0ba5e687478b1c67951fdd",
+    "settings.py": "bf3cf0b7abbfd21b8dfa7f80a15d5264511624013a6802885cc0bc655cad580d",
+    "stats.py": "2cc488867ef17f460d65b3323c6c5d9d36b500d71433b4aac294ec6a35040b3c",
+    "VERSION": "a82122eeee47db44b3d0459782e419193580a8d30d45dadd8a0744b72170e1e6"
+  },
+  "aggregate": "bca2496702d80e81",
+  "synced_at": "2026-06-17T04:54:54+00:00",
+  "source_version": "0.7.0-vendored-20260616"
+}

@@ -1,0 +1,18 @@
+# núcleo (Elo, modelo, CLI)
+pandas==3.0.2
+numpy==2.4.4
+PyYAML==6.0.3
+
+# coletor FBref (src/ingest_fbref.py)
+beautifulsoup4==4.14.3
+lxml==6.0.2
+html5lib==1.1
+
+# rede corporativa com inspeção TLS (opcional, mas recomendado)
+truststore==0.10.4
+
+# coletor Sofascore (src/ingest_sofascore.py)
+curl_cffi==0.15.0
+
+# motor estatístico (Dixon-Coles + Binomial Negativa, método de Shin)
+scipy==1.17.1
