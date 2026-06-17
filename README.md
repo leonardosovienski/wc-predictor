@@ -1,3 +1,11 @@
+> # ⚠️ SHADOW DEPLOYMENT — ISTO NÃO É PRODUÇÃO ⚠️
+> **`wc-predictor-v2` é um clone-sombra READ-ONLY do `wc-predictor`.** Não se altera a
+> produção a partir daqui. A produção real fica em `../wc-predictor` e está **PARKED**
+> (coleta de odds da Copa — dado irreproduzível). **Leia o [`SHADOW.md`](SHADOW.md)
+> ANTES de qualquer comando.** O texto abaixo é o README **herdado** do projeto original.
+
+---
+
 # wc-predictor
 
 Sistema de coleta e análise de dados para previsão de partidas internacionais de futebol (Copa do Mundo 2026).
