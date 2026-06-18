@@ -27,7 +27,7 @@ caveats (acesso ao `-shm`); validar ao apontar para a produção viva.
 - **Telemetria:** `emit_event` (predictor_core) emite `backtest_completed` (ROI/CLV).
 - Consome o `predictor_core` via `vendor/` (3º consumidor da plataforma).
 
-**Suíte: 81 testes verdes** (`py -3.12 -m pytest tests/ -q`), incluindo o teste de
+**Suíte: 81 testes verdes** (`python -m pytest tests/ -q`), incluindo o teste de
 rejeição de escrita read-only e os fixes acima.
 
 ## PROMOÇÃO (pendente — pós-Copa)
