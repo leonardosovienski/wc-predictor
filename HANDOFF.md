@@ -124,6 +124,18 @@ Arquitetura em camadas, toda testada com dados reais no sandbox:
   foi o loop infinito da depuração). `conftest.py` injeta a raiz no sys.path (funciona
   sem .venv, que o EDR corporativo quarentenou). `pytest` em `requirements-dev.txt`
   separado do runtime (mesma regra que recusou loguru).
+
+---
+
+Note de auditoria (2026-06-18): o repositório raiz contém um script de auditoria
+`scripts/test-audit-loop.ps1` e um utilitário `predictor-stocks/check_db.py` usado
+para inspeção do SQLite. Em uma sessão de verificação:
+
+- `prices_raw` cobriu 2024 (2024-01-02 → 2024-12-30).
+- 2025 foi re-ingestado posteriormente para completar o histórico; `universe_snapshots`
+  em 2025-12-19 contém 60 tickers.
+
+Ver `AUDIT_README.md` na raiz para o laudo completo.
 - Guard de odds AO VIVO (`is_pre_match` em ingest_sofascore): abertura e
   snapshot pre_match=1 só quando start_ts > now (estritamente pré-apito).
   "não terminou" era insuficiente — jogo em andamento também não terminou, e
