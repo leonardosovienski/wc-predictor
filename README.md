@@ -1,3 +1,18 @@
+<!-- ════════════════════════════════════════════════════════════════════
+RECONCILIAÇÃO DE EVIDÊNCIA — 2026-06-19 (fonte: ECOSYSTEM_STATUS.md na raiz)
+Marcas: [V] verificada por execução · [NV] não verificada.
+
+- [V] NÃO AUDITÁVEL no estado atual: não existe data/, .db, .csv nem .sqlite em
+  wc-predictor nem wc-predictor-v2 nesta máquina. ZERO dado.
+- [V] Os 81 testes passam — mas validam a MAQUINARIA (matemática, invariantes), NÃO
+  qualquer edge. Não há backtest sobre dado real aqui.
+- [NV] Tudo que o README abaixo descreve sobre Elo, modelo de gols, CLV e resultados é
+  DESIGN/HIPÓTESE não-verificável sem dado — não confundir com edge demonstrado.
+- Próximo experimento decisivo: coletar 1 rodada de odds de ABERTURA reais (cron da Copa,
+  PARKED até ~19/07). Sem isso, o CLV histórico é tautológico (abertura = fechamento).
+- Status de produção: NÃO AUDITÁVEL.
+═════════════════════════════════════════════════════════════════════ -->
+
 > # ⚠️ SHADOW DEPLOYMENT — ISTO NÃO É PRODUÇÃO ⚠️
 > **`wc-predictor-v2` é um clone-sombra READ-ONLY do `wc-predictor`.** Não se altera a
 > produção a partir daqui. A produção real fica em `../wc-predictor` e está **PARKED**
