@@ -3,6 +3,10 @@ data/
 *.db
 *.log
 
+# Telemetria de runtime (predictor_core.obs.emit_event grava na cwd por padrão).
+events.jsonl
+*.events.jsonl
+
 # Bytecode / cache
 __pycache__/
 *.py[cod]
