@@ -6,10 +6,10 @@
     "obs.py": "3b65d6f13b3fa7016acf7e8e830c7b17dfda00c225c4bb3e7f836d4562c73e40",
     "replay.py": "3574cc26edc2a91e720d69d0d0e6ed781f17b1045b0ba5e687478b1c67951fdd",
     "settings.py": "bf3cf0b7abbfd21b8dfa7f80a15d5264511624013a6802885cc0bc655cad580d",
-    "stats.py": "2cc488867ef17f460d65b3323c6c5d9d36b500d71433b4aac294ec6a35040b3c",
-    "VERSION": "a82122eeee47db44b3d0459782e419193580a8d30d45dadd8a0744b72170e1e6"
+    "stats.py": "7ea9b98b2a5e468924db69d9c0370405987e3179ad7393867709f7f507410ab2",
+    "VERSION": "211dfc8fefe57b4afa728a924771213d091037eb83e3df22b134c84e97dc8276"
   },
-  "aggregate": "bca2496702d80e81",
-  "synced_at": "2026-06-17T04:54:54+00:00",
-  "source_version": "0.7.0-vendored-20260616"
+  "aggregate": "2f7476fec3db7b53",
+  "synced_at": "2026-06-20T02:32:28+00:00",
+  "source_version": "0.8.0-vendored-20260619"
 }
