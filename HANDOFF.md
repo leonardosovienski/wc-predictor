@@ -5,6 +5,22 @@ junto com este arquivo.
 
 ---
 
+## Estado atual da SOMBRA (topo sempre corrente — 2026-06-19)
+
+Este repo é o **shadow read-only** `wc-predictor-v2`. **Nesta máquina não existe dado**
+(`data/`/`.db`/`.csv` ausentes) → o projeto é **não-auditável aqui**; a produção real com
+`matches.db` fica em outra máquina e está **PARKED** (coleta de odds da Copa, irreproduzível).
+**Suíte: 81 testes verdes** (`C:\Claude\.venv\Scripts\python.exe -m pytest tests/ -q`; só
+Python 3.14.6). Os testes validam a **maquinária** (Shin, NB→Poisson, invariantes, derive_groups),
+**não** edge. Consumidor do `predictor_core` via `vendor/`. Próximo passo decisivo: coletar odds
+de **abertura** reais (sem elas, o CLV histórico é tautológico). Estado consolidado da plataforma:
+`../ECOSYSTEM_STATUS.md`, `../FINAL_CERTIFICATION.md`, `../SESSION_CLOSEOUT_2026-06-19.md`.
+
+> O corpo abaixo é o **handoff herdado** do `wc-predictor` original (contexto/regras de
+> trabalho/decisões — caminho da máquina do Leo e "24 testes" são daquele contexto, não desta sombra).
+
+---
+
 ## O que é o projeto
 
 Sistema CLI em Python que prevê resultados da Copa do Mundo 2026. Roda 100% local

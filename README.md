@@ -1,23 +1,26 @@
-<!-- ════════════════════════════════════════════════════════════════════
-RECONCILIAÇÃO DE EVIDÊNCIA — 2026-06-19 (fonte: ECOSYSTEM_STATUS.md na raiz)
-Marcas: [V] verificada por execução · [NV] não verificada.
-
-- [V] NÃO AUDITÁVEL no estado atual: não existe data/, .db, .csv nem .sqlite em
-  wc-predictor nem wc-predictor-v2 nesta máquina. ZERO dado.
-- [V] Os 81 testes passam — mas validam a MAQUINARIA (matemática, invariantes), NÃO
-  qualquer edge. Não há backtest sobre dado real aqui.
-- [NV] Tudo que o README abaixo descreve sobre Elo, modelo de gols, CLV e resultados é
-  DESIGN/HIPÓTESE não-verificável sem dado — não confundir com edge demonstrado.
-- Próximo experimento decisivo: coletar 1 rodada de odds de ABERTURA reais (cron da Copa,
-  PARKED até ~19/07). Sem isso, o CLV histórico é tautológico (abertura = fechamento).
-- Status de produção: NÃO AUDITÁVEL.
-═════════════════════════════════════════════════════════════════════ -->
-
 > # ⚠️ SHADOW DEPLOYMENT — ISTO NÃO É PRODUÇÃO ⚠️
 > **`wc-predictor-v2` é um clone-sombra READ-ONLY do `wc-predictor`.** Não se altera a
-> produção a partir daqui. A produção real fica em `../wc-predictor` e está **PARKED**
-> (coleta de odds da Copa — dado irreproduzível). **Leia o [`SHADOW.md`](SHADOW.md)
-> ANTES de qualquer comando.** O texto abaixo é o README **herdado** do projeto original.
+> produção a partir daqui. **Leia o [`SHADOW.md`](SHADOW.md) ANTES de qualquer comando.**
+
+## Estado atual (2026-06-19)
+
+- **NÃO AUDITÁVEL nesta máquina:** não existe `data/`, `.db`, `.csv` nem `.sqlite` em
+  `wc-predictor` nem `wc-predictor-v2`. **Zero dado.** A produção real (com `matches.db`)
+  fica em outra máquina/rede e está **PARKED** (coleta de odds da Copa — irreproduzível).
+- **Suíte: 81 testes verdes** — runner `C:\Claude\.venv\Scripts\python.exe -m pytest tests/ -q`
+  (só Python 3.14.6 nesta máquina). Os testes validam a **MAQUINARIA** (matemática de Shin,
+  assíntota NB→Poisson, invariantes de banco, derive_groups), **NÃO** qualquer edge.
+- **Sem dado, nenhum comando de pipeline/predict/backtest produz resultado aqui** — eles
+  pertencem ao fluxo de produção. O design abaixo é **herdado** e descreve o modelo (Elo +
+  Binomial Negativa + Dixon-Coles + Shin + CLV); é DESIGN/HIPÓTESE, não edge demonstrado.
+- **Consumidor do `predictor_core`** via `vendor/`. Estado consolidado da plataforma:
+  `../ECOSYSTEM_STATUS.md`, `../FINAL_CERTIFICATION.md`, `../SESSION_CLOSEOUT_2026-06-19.md`.
+- **Próximo experimento decisivo:** coletar 1 rodada de odds de **abertura** reais (cron da
+  Copa). Sem isso, o CLV histórico é tautológico (abertura = fechamento ⇒ ≈ −vig).
+
+> O texto a seguir é o README **herdado** do `wc-predictor` original — documentação de
+> **design do modelo**. Os comandos `python -m src.*` e a contagem "24 testes" refletem o
+> fluxo/estado de produção, não esta sombra (que roda só a suíte, em 81 testes, read-only).
 
 ---
 
