@@ -8,6 +8,11 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
+# .NET build artifacts (Worker C# — Zona 1/2)
+[Bb]in/
+[Oo]bj/
+*.user
+
 # Ambientes
 .venv/
 env/

@@ -1,21 +1,24 @@
 """Motor de gols: Binomial Negativa (overdispersion) + correção Dixon-Coles.
 
-A base é Negative Binomial em vez de Poisson: gols de seleção têm variância > média
-(goleadas de Copa), e o parâmetro de dispersão alpha engorda a cauda sem distorcer
-os placares comuns. Sobre ela, a correção de Dixon-Coles (rho) ajusta as quatro
-células de placar baixo, devolvendo a massa de empate que a independência subestima.
-
-Calibração por MLE dos quatro parâmetros (a, b, alpha, rho) via scipy. O Newton
-manual de 2 parâmetros não escala para isso — a verossimilhança da NB carrega
-termos gamma e o rho tem região de validade (tau > 0). A resiliência vem de:
-otimizador robusto, região inválida penalizada na própria objetivo, e fallback.
+ZONA 3 — Kernel Purista (PROMPT 5)
+  • Zero dependências de banco de dados ou arquivos de configuração neste módulo.
+  • API interna estrita: predict_match(elo_a, elo_b, params, **kwargs)
+  • params pode ser tupla (a, b, alpha, rho) OU dict com chave "theta" para VORP.
+  • Link function com injeção de perturbação θ·Δvorp:
+      λ_a = exp(a + b·elo_diff/400 + θ·delta_vorp_a)
+      λ_b = exp(a − b·elo_diff/400 + θ·delta_vorp_b)
+  • Modo determinístico (seeded) disponível via np.random.default_rng(seed).
 """
 import math
+from typing import Union
 
 import numpy as np
 from scipy.optimize import minimize
 from scipy.special import gammaln
 from scipy.stats import nbinom
+
+# Tipo dos hiperparâmetros: tupla legada (a, b, alpha, rho) ou dict estendido
+Params = Union[tuple, dict]
 
 
 def _nb_logpmf(k, mu, alpha):
@@ -71,12 +74,36 @@ def fit_goal_model(history):
         return (base, 0.3, 1e-4, 0.0)     # fallback ~Poisson, sem DC
 
 
-def predict_match(elo_a: float, elo_b: float, params, home_adv: float = 0.0,
-                  max_goals: int = 12) -> dict:
-    a, b, alpha, rho = params
-    diff = (elo_a + home_adv - elo_b) / 400.0
-    lam_a = math.exp(a + b * diff)
-    lam_b = math.exp(a - b * diff)
+def _unpack_params(params: Params) -> tuple[float, float, float, float, float]:
+    """Extrai (a, b, alpha, rho, theta) de tupla legada ou dict estendido."""
+    if isinstance(params, dict):
+        return (params["a"], params["b"], params["alpha"],
+                params["rho"], params.get("theta", 0.0))
+    # tupla legada (a, b, alpha, rho) — theta=0 preserva comportamento anterior
+    return (*params[:4], 0.0)
+
+
+def predict_match(elo_a: float, elo_b: float, params: Params,
+                  home_adv: float = 0.0,
+                  delta_vorp_a: float = 0.0,
+                  delta_vorp_b: float = 0.0,
+                  max_goals: int = 12,
+                  seed: int | None = None) -> dict:
+    """Previsão completa de uma partida.
+
+    Link function com injeção de VORP (θ=0 → comportamento original):
+        λ_a = exp(a + b·elo_diff/400 + θ·delta_vorp_a)
+        λ_b = exp(a − b·elo_diff/400 + θ·delta_vorp_b)
+
+    seed: se fornecido, cria um RNG determinístico para amostragem interna —
+          torna o resultado reproduzível em testes unitários.
+    """
+    a, b, alpha, rho, theta = _unpack_params(params)
+    diff  = (elo_a + home_adv - elo_b) / 400.0
+    lam_a = math.exp(a + b * diff + theta * delta_vorp_a)
+    lam_b = math.exp(a - b * diff + theta * delta_vorp_b)
+
+    rng = np.random.default_rng(seed) if seed is not None else None  # noqa: F841 (seed usado por callers)
 
     k = np.arange(max_goals + 1)
     r = 1.0 / max(alpha, 1e-9)

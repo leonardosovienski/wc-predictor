@@ -1,0 +1,5 @@
+# Dependências do Kernel Daemon (Zona 3)
+# Instalação separada — não inclua no runtime da CLI (numba pesa ~500 MB com LLVM)
+redis[hiredis]>=5.0.8   # cliente async (redis.asyncio) + parser C de alta performance
+numba>=0.60.0           # JIT da grade bivariada NB (compilação única no boot)
+# numpy e scipy já estão em requirements.txt

@@ -15,6 +15,15 @@ Aproximação conhecida: o mata-mata usa emparelhamento sorteado, não o chaveam
 oficial 2026 dos 8 melhores terceiros (tabela fixa da FIFA). Mantém a incerteza
 realista sem fingir precisão de bracket que não temos.
 """
+"""Simulador de Monte Carlo do torneio (Parte 5).
+
+ZONA 3 — Kernel Purista (PROMPT 5)
+  • Funções puras (simulate_batch, run_tournament, _play…) não importam db nem config.
+  • DB e config são carregados sob demanda APENAS em monte_carlo() e main(), que
+    são o thin-adapter CLI — não fazem parte do kernel testável.
+  • VORP opcional: passe vorp={'team': delta_float, ...} para enriquecer os lambdas.
+    Sem vorp (ou vorp=None) o comportamento é idêntico à versão anterior.
+"""
 import math
 import random
 import sys
@@ -22,9 +31,6 @@ from collections import defaultdict
 
 import numpy as np
 from scipy.stats import nbinom
-
-from . import db
-from .ingest import ROOT, load_config
 
 INCENTIVE_CUT = 0.35        # corte de lambda quando o empate convém aos dois
 RED_RATE = 0.22             # vermelhos por time por jogo (taxa-base agregada)
@@ -58,10 +64,16 @@ def derive_groups(conn):
     return groups
 
 
-def _lambdas(ta, tb, elo, params):
+def _lambdas(ta, tb, elo, params, vorp: dict | None = None):
+    """λ_a, λ_b com injeção opcional de perturbação VORP.
+    vorp: dict time → delta_vorp (contribuição líquida do lineup em xG)."""
     a, b = params[0], params[1]
-    diff = (elo.get(ta, 1500) - elo.get(tb, 1500)) / 400.0   # Copa = campo neutro
-    return math.exp(a + b * diff), math.exp(a - b * diff)
+    theta = params[4] if len(params) > 4 else 0.0
+    diff  = (elo.get(ta, 1500) - elo.get(tb, 1500)) / 400.0
+    dv_a  = vorp.get(ta, 0.0) if vorp else 0.0
+    dv_b  = vorp.get(tb, 0.0) if vorp else 0.0
+    return (math.exp(a + b * diff + theta * dv_a),
+            math.exp(a - b * diff + theta * dv_b))
 
 
 def _red_factor():
@@ -90,9 +102,9 @@ def _sample_score(lam_a, lam_b, alpha, rho, max_goals=12):
     return idx // grid.shape[1], idx % grid.shape[1]
 
 
-def _play(ta, tb, elo, params, cut=1.0):
+def _play(ta, tb, elo, params, cut=1.0, vorp: dict | None = None):
     alpha, rho = params[2], params[3]
-    lam_a, lam_b = _lambdas(ta, tb, elo, params)
+    lam_a, lam_b = _lambdas(ta, tb, elo, params, vorp)
     lam_a *= cut * _red_factor()
     lam_b *= cut * _red_factor()
     return _sample_score(lam_a, lam_b, alpha, rho)
@@ -106,7 +118,7 @@ def _empate_classifica_ambos(ti, tj, pts, teams):
     return min(pts[ti], pts[tj]) + 1 > best_chaser
 
 
-def _simulate_group(teams, elo, params):
+def _simulate_group(teams, elo, params, vorp=None):
     pts = defaultdict(int)
     gf = defaultdict(int)
     ga = defaultdict(int)
@@ -117,7 +129,7 @@ def _simulate_group(teams, elo, params):
             cut = 1.0
             if rnd == 2 and _empate_classifica_ambos(ti, tj, pts, teams):
                 cut = 1.0 - INCENTIVE_CUT
-            gi, gj = _play(ti, tj, elo, params, cut)
+            gi, gj = _play(ti, tj, elo, params, cut, vorp)
             gf[ti] += gi; ga[ti] += gj
             gf[tj] += gj; ga[tj] += gi
             if gi > gj:
@@ -131,19 +143,19 @@ def _simulate_group(teams, elo, params):
     return ranked, table
 
 
-def _knockout_winner(ta, tb, elo, params):
-    ga, gb = _play(ta, tb, elo, params)
+def _knockout_winner(ta, tb, elo, params, vorp=None):
+    ga, gb = _play(ta, tb, elo, params, vorp=vorp)
     if ga != gb:
         return ta if ga > gb else tb
     pa = 1.0 / (1.0 + 10 ** (-(elo.get(ta, 1500) - elo.get(tb, 1500)) / 400.0))
     return ta if random.random() < pa else tb   # pênaltis, leve peso à força
 
 
-def run_tournament(groups, elo, params):
+def run_tournament(groups, elo, params, vorp=None):
     reached = {}
     qualifiers, thirds = [], []
     for teams in groups:
-        ranked, table = _simulate_group(teams, elo, params)
+        ranked, table = _simulate_group(teams, elo, params, vorp)
         for t in teams:
             reached[t] = "grupos"
         qualifiers += ranked[:2]
@@ -156,7 +168,7 @@ def run_tournament(groups, elo, params):
     bracket = qualifiers[:]
     random.shuffle(bracket)
     while len(bracket) > 1:
-        winners = [_knockout_winner(bracket[i], bracket[i + 1], elo, params)
+        winners = [_knockout_winner(bracket[i], bracket[i + 1], elo, params, vorp)
                    for i in range(0, len(bracket), 2)]
         stage = _NEXT[len(bracket)]
         for t in winners:
@@ -165,17 +177,16 @@ def run_tournament(groups, elo, params):
     return reached
 
 
-def simulate_batch(groups, elo, params, n, seed=None):
-    """Roda n torneios e agrega P(fase). seed (opcional) torna o resultado
-    REPRODUTÍVEL — fix da auditoria: o simulador não semeava random nem np.random,
-    então 'Brasil X% de título' não era reproduzível nem comparável entre versões."""
+def simulate_batch(groups, elo, params, n, seed=None, vorp=None):
+    """Roda n torneios e agrega P(fase).
+    seed: reprodutibilidade garantida. vorp: dict time→delta_vorp (opcional)."""
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
     rank = {s: i for i, s in enumerate(STAGES)}
     best = defaultdict(lambda: defaultdict(int))
     for _ in range(n):
-        for t, s in run_tournament(groups, elo, params).items():
+        for t, s in run_tournament(groups, elo, params, vorp).items():
             best[t][s] += 1
     rows = []
     for t, dist in best.items():
@@ -187,18 +198,23 @@ def simulate_batch(groups, elo, params, n, seed=None):
     return rows
 
 
-def monte_carlo(n=10000, seed=None):
-    cfg = load_config()
-    conn = db.connect(str(ROOT / cfg["database"]))
-    elo = db.load_elo(conn)
-    prow = db.load_params(conn)
+def monte_carlo(n=10000, seed=None, vorp=None):
+    """Thin-adapter CLI: carrega DB/config e chama simulate_batch.
+    O kernel (simulate_batch/run_tournament/…) não depende de DB — apenas este
+    adaptador o faz, e apenas aqui os imports pesados acontecem."""
+    from . import db as _db
+    from .ingest import ROOT as _ROOT, load_config as _load_config
+    cfg = _load_config()
+    conn = _db.connect(str(_ROOT / cfg["database"]))
+    elo = _db.load_elo(conn)
+    prow = _db.load_params(conn)
     if not elo or not prow:
         sys.exit("cache vazio — rode `python -m src.cron_update_models` primeiro")
     params = (prow[0], prow[1], prow[2], prow[3])
     groups = derive_groups(conn)
     if len(groups) != 12:
         sys.exit(f"esperava 12 grupos, derivei {len(groups)} — fixtures incompletas?")
-    return simulate_batch(groups, elo, params, n, seed=seed)
+    return simulate_batch(groups, elo, params, n, seed=seed, vorp=vorp)
 
 
 def main():
