@@ -23,7 +23,11 @@ from curl_cffi import requests as creq
 
 from .net import retry
 
-BASE = "https://api.sofascore.com/api/v1"
+# A API pública (api.sofascore.com) responde 403 {"reason":"challenge"} a
+# qualquer cliente HTTP. O frontend do site bate no MESMO host (www) via
+# /api/v1 (same-origin) e passa só por causa do header `x-requested-with`
+# (ver _HEADERS). Usar o host www + esse header é o que destrava a coleta.
+BASE = "https://www.sofascore.com/api/v1"
 
 
 def _windows_ca_bundle():
@@ -45,11 +49,27 @@ def _windows_ca_bundle():
     return tmp.name
 
 
+# `x-requested-with` é o que separa um 200 de um 403 "challenge": o Sofascore
+# só checa a PRESENÇA do header (o valor é livre — testado: token real e
+# string inventada passam igual). Os sec-fetch-* completam o disfarce de
+# chamada same-origin feita pelo próprio frontend.
+_HEADERS = {
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.sofascore.com/",
+    "x-requested-with": "wc-predictor",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-origin",
+}
+
+
 class Sofascore:
     def __init__(self, rate_limit: float = 1.5, cache_dir: str | None = None,
-                 impersonate: str = "chrome"):
+                 impersonate: str = "chrome146"):
         self.rate = rate_limit
         self.session = creq.Session(impersonate=impersonate)
+        self.session.headers.update(_HEADERS)
         self.cache = Path(cache_dir) if cache_dir else None
         if self.cache:
             self.cache.mkdir(parents=True, exist_ok=True)

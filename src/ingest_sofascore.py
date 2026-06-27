@@ -177,7 +177,10 @@ def run(seasons_for: int | None = None) -> None:
         except Exception as e:
             log.error("coleta de %s falhou: %s", name, e)
             continue
-        for ev in events:
+        total = len(events)
+        log.info("%s: %d jogos a coletar (~%.0fs com rate limit)...",
+                 name, total, total * client.rate * 2)
+        for i, ev in enumerate(events, 1):
             m = parse_match(ev)
             eid = m["event_id"]
             try:
@@ -224,6 +227,11 @@ def run(seasons_for: int | None = None) -> None:
                     db.upsert_ss_ratings(conn, ratings)
                     n_ratings += len(ratings)
                 n_matches += 1
+                # aviso de progresso por jogo: placar (disputado) ou "fixture"
+                placar = (f"{m['home_score']}x{m['away_score']}"
+                          if m["finished"] else "fixture")
+                log.info("  [%d/%d] %s %s %s", i, total,
+                         m["home_team"], placar, m["away_team"])
             except Exception as e:
                 log.warning("evento %s falhou: %s", eid, e)
         log.info("%s: %d jogos processados", name, len(events))

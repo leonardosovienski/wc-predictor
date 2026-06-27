@@ -62,10 +62,11 @@ sofascore:
   #   python -m src.ingest_sofascore --seasons UT_ID
   # ut_id (unique-tournament): World Cup=16, Euro=1, Copa America=133 (confirme)
   competitions:
-    - name: World Cup
-      season: "2022"
-      ut_id: 16
-      season_id: 41087
+    # Copa 2022 desativada — coletando SÓ a Copa 2026 (jogos disputados + fixtures).
+    # - name: World Cup
+    #   season: "2022"
+    #   ut_id: 16
+    #   season_id: 41087
     - name: World Cup 2026
       season: "2026"
       ut_id: 16

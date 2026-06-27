@@ -36,6 +36,7 @@ _ALIASES = {
     "south korea": "korea republic", "united states": "usa",
     "ir iran": "iran", "china pr": "china", "czechia": "czech republic",
     "cabo verde": "cape verde", "côte d'ivoire": "ivory coast",
+    "bosnia & herzegovina": "bosnia and herzegovina",  # Sofascore usa '&', base usa 'and'
 }
 
 
