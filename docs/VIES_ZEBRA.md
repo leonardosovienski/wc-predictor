@@ -108,6 +108,30 @@ no `b` rouba massa do lugar errado — **a doença não é o `b`, é o Elo compr
 (as distâncias de rating não refletem as distâncias reais de força). Confirma
 que o fix certo é **de-comprimir o Elo** (prior FIFA na MLE), não cranguear `b`.
 
+## Demonstração empírica (de "mecanismo plausível" a "provado")
+
+Um peer-review apontou, com razão, que o acima era mecanismo plausível, não
+demonstrado. `scripts/prova_mecanismo.py` fecha a lacuna (walk-forward, 51 jogos
+da Copa com odds, 153 seleções):
+
+**1. P_modelo − P_mercado(Shin) por papel:**
+
+| Papel | dif média | modelo acima do mercado |
+|---|---|---|
+| Favorito | **−17,8%** | só 12% dos casos |
+| Empate | +4,5% | 75% |
+| Azarão | **+13,3%** | 88% dos casos |
+
+**2. Apostas-candidatas por faixa de odd:** 0 em odds 1.00–1.50; **78 das 84 em
+odds ≥ 3.0**. O "só azarão" é o histograma, não narrativa.
+
+**3. Teste do vig:** o skew pró-azarão persiste comparando contra prob justa
+(Shin, sem vig) — 52% → 51%. **O overround NÃO é a causa**; é estrutural.
+
+> Correção de rigor: a afirmação certa é "o modelo é menos confiante no favorito
+> em ~88% dos casos" — tendência forte, **não** lei absoluta (em 12% ele supera o
+> mercado no favorito). "Teorema"/"nunca" era overclaim.
+
 ## Como reproduzir
 `python scripts/diag_zebra.py` (cache atual + jogos disputados da Copa 2026). É
 medida de **tendência do output**, não backtest sem-lookahead — suficiente para
