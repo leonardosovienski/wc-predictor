@@ -155,10 +155,27 @@ def _verdict(selection_kind: str, p_model, p_cons, best_odd, n_books, min_edge) 
     return " | ".join(notes) if notes else ""
 
 
+def _started(ev: dict) -> bool:
+    """Jogo ja iniciado: odds sao AO VIVO — comparar com modelo pre-jogo gera
+    'valor' fantasma (ex.: empate a 126 com o favorito vencendo em campo)."""
+    ct = ev.get("commence_time")
+    if not ct:
+        return False
+    try:
+        start = datetime.fromisoformat(ct.replace("Z", "+00:00"))
+        return start <= datetime.now(timezone.utc)
+    except ValueError:
+        return False
+
+
 def analyze(events: list, jogo_filter: str | None, min_edge: float) -> None:
     for ev in events:
         home, away = ev.get("home_team", "?"), ev.get("away_team", "?")
         if jogo_filter and jogo_filter.lower() not in f"{home} {away}".lower():
+            continue
+        if _started(ev):
+            print(f"\n{home} x {away}: JA COMECOU — odds ao vivo, fora do escopo "
+                  f"(modelo e' pre-jogo). Pulado.")
             continue
         print(f"\n{'=' * 66}\n{home} x {away}  ({ev.get('commence_time', '?')})\n{'=' * 66}")
         pm = model_probs_for(home, away)
