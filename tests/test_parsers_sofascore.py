@@ -51,6 +51,27 @@ def test_decimal_malformado_nao_estoura():
     assert frac_to_decimal({"decimalValue": "abc"}) is None
 
 
+def test_frac_to_decimal_key_abertura():
+    # initialFractionalValue = abertura; fractionalValue = fechamento. Mesmo choice.
+    c = {"fractionalValue": "4/5", "initialFractionalValue": "73/100"}
+    assert frac_to_decimal(c) == 1.8                          # default = fechamento
+    assert frac_to_decimal(c, "initialFractionalValue") == 1.73   # abertura
+
+
+def test_frac_to_decimal_initial_ausente_vira_none_sem_fallback():
+    # o fallback para decimalValue só vale para o fechamento; abertura ausente = None
+    assert frac_to_decimal({"decimalValue": "2.0"}, "initialFractionalValue") is None
+
+
+def test_parse_odds_initial_le_abertura():
+    odds = {"markets": [{"marketId": 1, "choices": [
+        {"name": "1", "fractionalValue": "1/1", "initialFractionalValue": "9/10"},
+        {"name": "X", "fractionalValue": "2/1", "initialFractionalValue": "21/10"},
+        {"name": "2", "fractionalValue": "3/1", "initialFractionalValue": "5/2"}]}]}
+    assert parse_odds(odds) == (2.0, 3.0, 4.0)                       # fechamento
+    assert parse_odds(odds, initial=True) == (1.9, 3.1, 3.5)        # abertura
+
+
 # ------------------------------------------------------------- parse_odds
 def test_payload_vazio_devolve_nones():
     assert parse_odds(None) == (None, None, None)

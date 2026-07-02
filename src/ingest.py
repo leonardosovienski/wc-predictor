@@ -1,5 +1,6 @@
 import io
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -9,8 +10,10 @@ import yaml
 from . import db
 from .net import retry
 from .obs import get_logger, setup_logging
+from predictor_core.obs import emit_event
 
 log = get_logger()
+_DOMAIN = "wc"
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -53,6 +56,7 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
 def run() -> None:
     cfg = load_config()
     setup_logging(ROOT / "data")
+    t0 = time.monotonic()
     df = normalize(fetch_csv(cfg))
     conn = db.connect(str(ROOT / cfg["database"]))
     rows = [
@@ -66,6 +70,11 @@ def run() -> None:
     played = conn.execute("SELECT COUNT(*) FROM matches WHERE home_score IS NOT NULL").fetchone()[0]
     fixtures = conn.execute("SELECT COUNT(*) FROM matches WHERE home_score IS NULL").fetchone()[0]
     log.info("banco: %d partidas jogadas, %d fixtures futuros", played, fixtures)
+    emit_event(_DOMAIN, "ingest_done",
+               metrics={"records": float(len(rows)), "played": float(played),
+                        "fixtures": float(fixtures),
+                        "duration_sec": round(time.monotonic() - t0, 2)},
+               metadata={"source": "results_csv"})
 
 
 if __name__ == "__main__":

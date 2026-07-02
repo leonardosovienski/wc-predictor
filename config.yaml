@@ -55,31 +55,22 @@ player_stats:
       season: "2024"
       url: https://fbref.com/en/comps/676/2024/stats/2024-UEFA-Euro-Stats
 
+
+
 sofascore:
   cache_dir: data/sofascore_cache
   rate_limit_seconds: 1.5
-  # descubra o season_id de cada competição com:
-  #   python -m src.ingest_sofascore --seasons UT_ID
-  # ut_id (unique-tournament): World Cup=16, Euro=1, Copa America=133 (confirme)
   competitions:
-    # Copa 2022 desativada — coletando SÓ a Copa 2026 (jogos disputados + fixtures).
-    # - name: World Cup
-    #   season: "2022"
-    #   ut_id: 16
-    #   season_id: 41087
     - name: World Cup 2026
       season: "2026"
       ut_id: 16
       season_id: 58210
-      upcoming: true   # coleta odds dos fixtures futuros (pra comparar vs modelo)
-    # --- para engordar o backtest, descubra o season_id e descomente ---
-    #   python -m src.ingest_sofascore --seasons 1     # Euro
-    #   python -m src.ingest_sofascore --seasons 133   # Copa America
-    # - name: Euro 2024
-    #   season: "2024"
-    #   ut_id: 1
-    #   season_id: 0     # <-- preencha com o id de 2024
-    # - name: Copa America 2024
-    #   season: "2024"
-    #   ut_id: 133
-    #   season_id: 0     # <-- preencha com o id de 2024
+      upcoming: true
+    - name: Copa America 2024
+      season: "2024"
+      ut_id: 133
+      season_id: 57114
+    - name: Euro 2024
+      season: "2024"
+      ut_id: 676
+      season_id: 56953

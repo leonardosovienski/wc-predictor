@@ -32,13 +32,15 @@ sys.path.insert(0, str(ROOT))
 from src import db
 from src.model import predict_match
 from src.math_utils import shin_probabilities
-from vendor.predictor_core.stats import (
+# Métricas de domínio (placar) — de-forkadas do core para src/research (2026-06).
+from src.research.score_metrics import (
     log_loss_matrix,
     brier_score_multiclass,
     brier_skill_score,
     diebold_mariano_hln,
-    probabilistic_sharpe_ratio,
 )
+# PSR é primitiva canônica da plataforma — continua vindo do core vendorizado.
+from vendor.predictor_core.stats import probabilistic_sharpe_ratio
 
 TEST_SEASONS = {"2023", "2024"}
 MAX_GOALS = 12

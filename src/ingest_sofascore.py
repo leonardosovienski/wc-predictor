@@ -19,17 +19,25 @@ log = get_logger()
 # precisar do cliente HTTP instalado.
 
 
-def frac_to_decimal(choice: dict):
+def frac_to_decimal(choice: dict, key: str = "fractionalValue"):
     """Sofascore dá odds como fração ('5/2'). Converte para decimal (3.5).
+
+    `key` escolhe o campo: 'fractionalValue' = preço ATUAL/fechamento (default);
+    'initialFractionalValue' = preço de ABERTURA (vem inline no mesmo payload —
+    destrava a população 'open' real sem esperar o cron coletar em dois tempos).
+
     Fronteira com payload externo: formato inesperado vira None, nunca exceção
-    — um choice ruim não pode derrubar a coleta do evento inteiro."""
-    fv = choice.get("fractionalValue")
+    — um choice ruim não pode derrubar a coleta do evento inteiro. O fallback
+    para decimalValue só vale para o fechamento (a abertura não tem campo decimal)."""
+    fv = choice.get(key)
     if not fv:
-        dv = choice.get("decimalValue")
-        try:
-            return float(dv) if dv else None
-        except (TypeError, ValueError):
-            return None
+        if key == "fractionalValue":
+            dv = choice.get("decimalValue")
+            try:
+                return float(dv) if dv else None
+            except (TypeError, ValueError):
+                return None
+        return None
     try:
         num, den = fv.split("/")
         return round(1 + float(num) / float(den), 3)
@@ -92,13 +100,86 @@ def parse_xg(stats: dict):
     return None, None
 
 
-def parse_odds(odds: dict):
+def _safe_float(val):
+    """Converte valor (possivelmente string com '%', 'm', 'km') para float."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val)
+    for suffix in ('%', 'km', 'KM', 'm', 'M'):
+        s = s.replace(suffix, '')
+    s = s.strip()
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def parse_statistics(event_data):
+    """
+    Extrai TODAS as estatisticas do event_statistics.
+    Retorna dict: {period: {stat_name: {'home': float, 'away': float}}}
+    """
+    if not event_data:
+        return {}
+    periods = event_data.get('statistics')
+    if not periods:
+        return {}
+    if isinstance(periods, dict):
+        periods = periods.get('periods', [])
+    if not isinstance(periods, list):
+        return {}
+    result = {}
+    for period in periods:
+        period_name = period.get('period', 'ALL')
+        groups = period.get('groups', [])
+        period_stats = {}
+        for group in groups:
+            for item in group.get('statisticsItems', []):
+                name = item.get('name')
+                if not name:
+                    continue
+                home_val = _safe_float(item.get('home'))
+                away_val = _safe_float(item.get('away'))
+                if home_val is not None or away_val is not None:
+                    period_stats[name] = {'home': home_val, 'away': away_val}
+        if period_stats:
+            result[period_name] = period_stats
+    return result
+
+
+def parse_statistics_flat(event_data, event_id):
+    """
+    Achata parse_statistics em linhas para insert no banco.
+    Cada linha: {event_id, team, period, stat_name, value}
+    """
+    stats_dict = parse_statistics(event_data)
+    rows = []
+    for period, stats in stats_dict.items():
+        for stat_name, vals in stats.items():
+            for team in ('home', 'away'):
+                value = vals.get(team)
+                if value is not None:
+                    rows.append({
+                        'event_id': event_id,
+                        'team': team,
+                        'period': period,
+                        'stat_name': stat_name,
+                        'value': value
+                    })
+    return rows
+
+
+def parse_odds(odds: dict, initial: bool = False):
+    """1X2 (marketId 1). initial=True lê a ABERTURA (initialFractionalValue)."""
+    key = "initialFractionalValue" if initial else "fractionalValue"
     for market in (odds or {}).get("markets", []):
         name = market.get("marketName", "").lower()
         if "full time" in name or market.get("marketId") == 1:
             out = {}
             for choice in market.get("choices", []):
-                out[choice.get("name")] = frac_to_decimal(choice)
+                out[choice.get("name")] = frac_to_decimal(choice, key)
             return out.get("1"), out.get("X"), out.get("2")
     return None, None, None
 
@@ -107,12 +188,14 @@ def parse_odds(odds: dict):
 _HANDICAP = re.compile(r"(\d+(?:\.\d+)?)\s*$")
 
 
-def parse_ou(odds: dict, line: float = 2.5):
+def parse_ou(odds: dict, line: float = 2.5, initial: bool = False):
     """Odd de Over/Under na linha principal de gols (default 2.5).
     O mercado de totais do Sofascore carrega o handicap em `choice.name`
     ('Over 2.5') ou no `market.choiceGroup`. A comparação é NUMÉRICA: matching
     por substring deixava a linha 12.5 sobrescrever a 2.5 sem exceção e a odd
-    errada entrava no banco calada. Retorna (over, under)."""
+    errada entrava no banco calada. Retorna (over, under).
+    initial=True lê a ABERTURA (initialFractionalValue)."""
+    key = "initialFractionalValue" if initial else "fractionalValue"
     for market in (odds or {}).get("markets", []):
         name = market.get("marketName", "").lower()
         if "total" not in name and "over/under" not in name and "goals" not in name:
@@ -129,12 +212,117 @@ def parse_ou(odds: dict, line: float = 2.5):
             except (TypeError, ValueError):
                 continue
             if "over" in cname:
-                over = frac_to_decimal(choice)
+                over = frac_to_decimal(choice, key)
             elif "under" in cname:
-                under = frac_to_decimal(choice)
+                under = frac_to_decimal(choice, key)
         if over and under:
             return over, under
     return None, None
+
+
+# Linha do handicap asiático embutida no nome do choice: "(-0.75) Croatia".
+_AH_LINE_RE = re.compile(r"\(\s*([+-]?\d+(?:\.\d+)?)\s*\)\s*(.+)")
+
+
+def _line_value(market: dict):
+    """Linha (float) de um mercado de totais — vem em choiceGroup ('2.5')."""
+    cg = market.get("choiceGroup")
+    try:
+        return float(cg) if cg is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _same_team(a: str | None, b: str | None) -> bool:
+    """Nomes vêm da MESMA fonte (Sofascore) no nome do choice e em parse_match,
+    então a comparação é direta (case-insensitive). Sem _canon: aqui não há
+    reconciliação com a base — isso é problema do backtest, não do parser."""
+    return bool(a) and bool(b) and a.strip().lower() == b.strip().lower()
+
+
+def parse_all_odds(odds: dict, home_name: str | None = None,
+                   away_name: str | None = None, initial: bool = False) -> dict:
+    """Extrai TODOS os mercados derivados da grade de gols do payload de odds.
+
+    Estrutura confirmada via probe (sofascore_probe_15186624.json):
+      marketId 1=1X2, 2=DC, 4=DNB, 5=BTTS, 9=OU (linha em choiceGroup),
+      17=AH (linha+time no nome do choice),
+      20=cards, 21=corners (estrutura igual ao OU).
+    initial=True lê a ABERTURA (initialFractionalValue) em vez do fechamento.
+    odd ausente/ilegível vira None (nunca exceção — fronteira com payload externo).
+    """
+    key = "initialFractionalValue" if initial else "fractionalValue"
+    out = {"1x2": {}, "dc": {}, "dnb": {}, "btts": {}, "ou": {}, "ah": {},
+           "cards": {}, "corners": {}}   # <-- adicionado
+    for market in (odds or {}).get("markets", []) or []:
+        mid = market.get("marketId")
+        choices = market.get("choices", []) or []
+
+        if mid == 1:
+            for c in choices:
+                out["1x2"][c.get("name")] = frac_to_decimal(c, key)
+        elif mid == 2:
+            for c in choices:
+                out["dc"][c.get("name")] = frac_to_decimal(c, key)
+        elif mid == 4:
+            for c in choices:
+                out["dnb"][c.get("name")] = frac_to_decimal(c, key)
+        elif mid == 5:
+            for c in choices:
+                out["btts"][c.get("name")] = frac_to_decimal(c, key)
+        elif mid == 9:
+            line = _line_value(market)
+            if line is None:
+                continue
+            over = under = None
+            for c in choices:
+                nm = (c.get("name") or "").strip().lower()
+                if nm == "over":
+                    over = frac_to_decimal(c, key)
+                elif nm == "under":
+                    under = frac_to_decimal(c, key)
+            out["ou"][line] = {"Over": over, "Under": under}
+        elif mid == 17:
+            home_line = None
+            entry = {}
+            for c in choices:
+                m = _AH_LINE_RE.match((c.get("name") or "").strip())
+                if not m:
+                    continue
+                line, team = float(m.group(1)), m.group(2).strip()
+                odd = frac_to_decimal(c, key)
+                if _same_team(team, home_name):
+                    home_line, entry["home"] = line, odd
+                elif _same_team(team, away_name):
+                    entry["away"] = odd
+            if home_line is not None and entry:
+                out["ah"][home_line] = entry
+        # ===== NOVOS MERCADOS =====
+        elif mid == 20:   # cartões
+            line = _line_value(market)
+            if line is None:
+                continue
+            over = under = None
+            for c in choices:
+                nm = (c.get("name") or "").strip().lower()
+                if nm == "over":
+                    over = frac_to_decimal(c, key)
+                elif nm == "under":
+                    under = frac_to_decimal(c, key)
+            out["cards"][line] = {"Over": over, "Under": under}
+        elif mid == 21:   # escanteios
+            line = _line_value(market)
+            if line is None:
+                continue
+            over = under = None
+            for c in choices:
+                nm = (c.get("name") or "").strip().lower()
+                if nm == "over":
+                    over = frac_to_decimal(c, key)
+                elif nm == "under":
+                    under = frac_to_decimal(c, key)
+            out["corners"][line] = {"Over": over, "Under": under}
+    return out
 
 
 def parse_ratings(lineups: dict, home_name: str, away_name: str, event_id: int):
@@ -151,14 +339,14 @@ def parse_ratings(lineups: dict, home_name: str, away_name: str, event_id: int):
 
 
 def run(seasons_for: int | None = None) -> None:
-    from .sofascore import Sofascore   # lazy: só quem coleta precisa do curl_cffi
+    from .sofascore import Sofascore
     setup_logging(ROOT / "data")
     cfg = load_config()
     scfg = cfg.get("sofascore", {})
     client = Sofascore(rate_limit=float(scfg.get("rate_limit_seconds", 1.5)),
                        cache_dir=str(ROOT / scfg["cache_dir"]) if scfg.get("cache_dir") else None)
 
-    if seasons_for:  # modo descoberta de season_id
+    if seasons_for:
         for sid, year in client.list_seasons(seasons_for):
             log.info("season_id=%s  year=%s", sid, year)
         return
@@ -184,37 +372,30 @@ def run(seasons_for: int | None = None) -> None:
             m = parse_match(ev)
             eid = m["event_id"]
             try:
-                # cache só pra jogo encerrado: odd é dado temporal (ver sofascore._get)
                 raw_odds = client.event_odds(eid, finished=m["finished"])
                 oh, od, oa = parse_odds(raw_odds)
                 ou_line = cfg.get("backtest", {}).get("over_under_line", 2.5)
                 o_over, o_under = parse_ou(raw_odds, ou_line)
 
-                # ABERTURA = primeira odd observada ESTRITAMENTE PRÉ-apito.
-                # is_pre_match (start futuro) — não basta "não terminou": jogo
-                # em andamento também não terminou, e odd in-play gravada como
-                # open contaminaria a população onde o CLV carrega sinal. O
-                # COALESCE preserva a abertura legítima já capturada antes.
+                oh_o, od_o, oa_o = parse_odds(raw_odds, initial=True)
+                o_over_o, o_under_o = parse_ou(raw_odds, ou_line, initial=True)
+                opens = (oh_o, od_o, oa_o, o_over_o, o_under_o)
+
                 pre = is_pre_match(m["start_ts"])
-                if pre:
-                    opens = (oh, od, oa, o_over, o_under)
-                else:
-                    opens = (None, None, None, None, None)
 
                 if m["finished"]:
-                    hxg, axg = parse_xg(client.event_statistics(eid))
+                    stats_data = client.event_statistics(eid)
+                    hxg, axg = parse_xg(stats_data)
                     ratings = parse_ratings(client.event_lineups(eid),
                                             m["home_team"], m["away_team"], eid)
-                else:                       # fixture futuro: só odds
+                else:
                     hxg = axg = None
                     ratings = []
+
                 db.upsert_ss_matches(conn, [(eid, name, season, m["date"],
                     m["home_team"], m["away_team"], m["home_score"], m["away_score"],
                     hxg, axg, oh, od, oa, o_over, o_under, *opens)])
 
-                # série temporal: toda coleta vira foto (append-only, idempotente).
-                # pre_match usa o MESMO guard estrito — foto in-play fica marcada
-                # 0 e o backtest/análise filtra a população certa por construção.
                 now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 snaps = [(eid, now, "1x2", sel, odd, int(pre))
                          for sel, odd in (("home", oh), ("draw", od), ("away", oa)) if odd]
@@ -223,11 +404,24 @@ def run(seasons_for: int | None = None) -> None:
                 if snaps:
                     db.insert_snapshots(conn, snaps)
 
+                parsed_close = parse_all_odds(raw_odds, m["home_team"], m["away_team"])
+                parsed_open = parse_all_odds(raw_odds, m["home_team"], m["away_team"],
+                                             initial=True)
+                db.update_flat_markets(conn, eid, parsed_close, parsed_open)
+                line_rows = db.lines_rows_from_parsed(eid, parsed_close, parsed_open)
+                if line_rows:
+                    db.upsert_odds_lines(conn, line_rows)
+
+                # --- estatísticas completas (Fase 2) ---
+                if m["finished"]:
+                    stats_rows = parse_statistics_flat(stats_data, eid)
+                    if stats_rows:
+                        db.upsert_match_statistics(conn, stats_rows)
+
                 if ratings:
                     db.upsert_ss_ratings(conn, ratings)
                     n_ratings += len(ratings)
                 n_matches += 1
-                # aviso de progresso por jogo: placar (disputado) ou "fixture"
                 placar = (f"{m['home_score']}x{m['away_score']}"
                           if m["finished"] else "fixture")
                 log.info("  [%d/%d] %s %s %s", i, total,

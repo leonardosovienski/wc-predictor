@@ -2,6 +2,7 @@
 data/
 *.db
 *.log
+events.jsonl
 
 # Bytecode / cache
 __pycache__/

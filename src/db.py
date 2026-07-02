@@ -2,6 +2,18 @@ import sqlite3
 from pathlib import Path
 
 SCHEMA = """
+
+CREATE TABLE IF NOT EXISTS match_statistics (
+    event_id INTEGER NOT NULL,
+    team TEXT NOT NULL,
+    period TEXT NOT NULL,
+    stat_name TEXT NOT NULL,
+    value REAL,
+    PRIMARY KEY (event_id, team, period, stat_name),
+    FOREIGN KEY (event_id) REFERENCES sofascore_matches(event_id)
+);
+
+
 CREATE TABLE IF NOT EXISTS matches (
     date        TEXT NOT NULL,
     home_team   TEXT NOT NULL,
@@ -61,6 +73,22 @@ CREATE TABLE IF NOT EXISTS odds_snapshots (
     PRIMARY KEY (event_id, market, selection, captured_at)
 );
 CREATE INDEX IF NOT EXISTS idx_snap_event ON odds_snapshots(event_id, market);
+
+-- Mercados de LINHA (dois lados + linha variável): Over/Under (todas as linhas) e
+-- Handicap Asiático na MESMA tabela — porque são a mesma forma (linha + 2 lados).
+-- Evita dezenas de colunas hardcoded por linha e é à prova de linha nova; a Fase 3
+-- (cartões/escanteios) entra aqui sem mudar schema (market='cards'|'corners').
+--   ou: odd_a=Over,  odd_b=Under  |  ah: odd_a=home (mando), odd_b=away
+--   line: 2.5, -0.75, ...  | *_open = abertura (write-once via COALESCE)
+CREATE TABLE IF NOT EXISTS odds_lines (
+    event_id   INTEGER NOT NULL,
+    market     TEXT    NOT NULL,   -- 'ou' | 'ah' | (futuro: 'cards','corners')
+    line       REAL    NOT NULL,
+    odd_a      REAL, odd_b REAL,
+    odd_a_open REAL, odd_b_open REAL,
+    PRIMARY KEY (event_id, market, line)
+);
+CREATE INDEX IF NOT EXISTS idx_lines_event ON odds_lines(event_id, market);
 
 CREATE TABLE IF NOT EXISTS current_elo (
     team TEXT PRIMARY KEY,
@@ -123,6 +151,19 @@ def connect(db_path: str, read_only: bool = False) -> sqlite3.Connection:
     return conn
 
 
+# Mercados de seleção FIXA (sem linha): colunas flat por velocidade de backtest.
+# DC/DNB/BTTS têm seleções estáveis, então flat faz sentido (1 linha por jogo,
+# odds inline). Mercados de LINHA (OU/AH) vão para odds_lines, não aqui.
+_FLAT_MARKET_COLS = (
+    "odds_dc_1x", "odds_dc_x2", "odds_dc_12",
+    "odds_dnb_home", "odds_dnb_away",
+    "odds_btts_yes", "odds_btts_no",
+    "odds_dc_1x_open", "odds_dc_x2_open", "odds_dc_12_open",
+    "odds_dnb_home_open", "odds_dnb_away_open",
+    "odds_btts_yes_open", "odds_btts_no_open",
+)
+
+
 def _migrate(conn):
     """Adiciona colunas novas a bancos pré-existentes (idempotente)."""
     cols = {r[1] for r in conn.execute("PRAGMA table_info(sofascore_matches)")}
@@ -130,10 +171,19 @@ def _migrate(conn):
            # abertura = primeira odd observada PRÉ-APITO (write-once via COALESCE).
            # NULL na base histórica coletada pós-jogo: abertura desconhecida ≠ close.
            "odds_home_open", "odds_draw_open", "odds_away_open",
-           "odds_over_open", "odds_under_open")
+           "odds_over_open", "odds_under_open",
+           *_FLAT_MARKET_COLS)
     for col in new:
         if col not in cols:
             conn.execute(f"ALTER TABLE sofascore_matches ADD COLUMN {col} REAL")
+    # Backfill não-destrutivo: a linha principal de OU (2.5) já gravada nas colunas
+    # legadas vira a forma canônica em odds_lines. INSERT OR IGNORE preserva o que
+    # já existir lá (re-rodar a migração é inócuo).
+    conn.execute(
+        "INSERT OR IGNORE INTO odds_lines "
+        "(event_id, market, line, odd_a, odd_b, odd_a_open, odd_b_open) "
+        "SELECT event_id, 'ou', 2.5, odds_over, odds_under, odds_over_open, odds_under_open "
+        "FROM sofascore_matches WHERE odds_over IS NOT NULL")
     conn.commit()
 
 
@@ -193,6 +243,99 @@ def insert_snapshots(conn, rows):
         "VALUES (?,?,?,?,?,?)", rows)
     conn.commit()
     return cur.rowcount
+
+
+# --- mercados estendidos (Fase 1: BTTS, DC, DNB, OU multi-linha, AH) ---
+
+_UPDATE_FLAT = """
+UPDATE sofascore_matches SET
+    odds_dc_1x=?, odds_dc_x2=?, odds_dc_12=?,
+    odds_dnb_home=?, odds_dnb_away=?, odds_btts_yes=?, odds_btts_no=?,
+    odds_dc_1x_open       = COALESCE(odds_dc_1x_open, ?),
+    odds_dc_x2_open       = COALESCE(odds_dc_x2_open, ?),
+    odds_dc_12_open       = COALESCE(odds_dc_12_open, ?),
+    odds_dnb_home_open    = COALESCE(odds_dnb_home_open, ?),
+    odds_dnb_away_open    = COALESCE(odds_dnb_away_open, ?),
+    odds_btts_yes_open    = COALESCE(odds_btts_yes_open, ?),
+    odds_btts_no_open     = COALESCE(odds_btts_no_open, ?)
+WHERE event_id=?
+"""
+
+
+def _flat_vals(parsed: dict):
+    dc = parsed.get("dc", {}) or {}
+    dnb = parsed.get("dnb", {}) or {}
+    btts = parsed.get("btts", {}) or {}
+    return [dc.get("1X"), dc.get("X2"), dc.get("12"),
+            dnb.get("1"), dnb.get("2"), btts.get("Yes"), btts.get("No")]
+
+
+def update_flat_markets(conn, event_id, parsed_close: dict, parsed_open: dict):
+    """Atualiza as colunas flat (DC/DNB/BTTS) de um jogo já inserido.
+    odds_* = FECHAMENTO (parsed_close, última leitura vence); *_open = ABERTURA
+    (parsed_open, vinda do initialFractionalValue) — write-once via COALESCE.
+    A abertura agora é o preço de abertura da casa de apostas (inline no JSON),
+    não 'a primeira foto do nosso cron' — destrava a população 'open' real."""
+    close = _flat_vals(parsed_close)
+    opens = _flat_vals(parsed_open or {})
+    conn.execute(_UPDATE_FLAT, (*close, *opens, event_id))
+    conn.commit()
+
+
+def lines_rows_from_parsed(event_id, parsed_close: dict, parsed_open: dict):
+    """Linhas de odds_lines a partir dos dicts de parse_all_odds (fechamento e
+    abertura). PURO (sem DB). ou: a=Over,b=Under; ah: a=home,b=away;
+    cards/corners: a=Over,b=Under (mesma estrutura do ou).
+    A abertura é casada pela MESMA linha; ausente vira None."""
+    op = parsed_open or {}
+    rows = []
+    # OU (gols)
+    for line, d in (parsed_close.get("ou") or {}).items():
+        od = (op.get("ou") or {}).get(line, {})
+        rows.append((event_id, "ou", float(line), d.get("Over"), d.get("Under"),
+                     od.get("Over"), od.get("Under")))
+    # AH
+    for line, d in (parsed_close.get("ah") or {}).items():
+        od = (op.get("ah") or {}).get(line, {})
+        rows.append((event_id, "ah", float(line), d.get("home"), d.get("away"),
+                     od.get("home"), od.get("away")))
+    # ===== NOVOS: CARDS =====
+    for line, d in (parsed_close.get("cards") or {}).items():
+        od = (op.get("cards") or {}).get(line, {})
+        rows.append((event_id, "cards", float(line), d.get("Over"), d.get("Under"),
+                     od.get("Over"), od.get("Under")))
+    # ===== NOVOS: CORNERS =====
+    for line, d in (parsed_close.get("corners") or {}).items():
+        od = (op.get("corners") or {}).get(line, {})
+        rows.append((event_id, "corners", float(line), d.get("Over"), d.get("Under"),
+                     od.get("Over"), od.get("Under")))
+    return rows
+
+
+def upsert_odds_lines(conn, rows):
+    """Grava mercados de linha (OU/AH). Fechamento sobrescreve; abertura é
+    write-once (COALESCE). PK (event_id, market, line) torna re-runs idempotentes."""
+    cur = conn.executemany(
+        "INSERT INTO odds_lines "
+        "(event_id, market, line, odd_a, odd_b, odd_a_open, odd_b_open) "
+        "VALUES (?,?,?,?,?,?,?) "
+        "ON CONFLICT(event_id, market, line) DO UPDATE SET "
+        "  odd_a=excluded.odd_a, odd_b=excluded.odd_b, "
+        "  odd_a_open=COALESCE(odds_lines.odd_a_open, excluded.odd_a_open), "
+        "  odd_b_open=COALESCE(odds_lines.odd_b_open, excluded.odd_b_open)",
+        rows)
+    conn.commit()
+    return cur.rowcount
+
+def upsert_match_statistics(conn, rows):
+    """Insere ou substitui estatísticas do evento.
+    rows: lista de dicts com {event_id, team, period, stat_name, value}
+    """
+    conn.executemany("""
+        INSERT OR REPLACE INTO match_statistics (event_id, team, period, stat_name, value)
+        VALUES (:event_id, :team, :period, :stat_name, :value)
+    """, rows)
+    conn.commit()
 
 
 # --- cache de modelo (Parte 2: serving instantâneo) ---

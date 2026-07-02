@@ -3,6 +3,9 @@ import sys
 
 from . import db, model
 from .ingest import ROOT, load_config
+from predictor_core.obs import emit_event
+
+_DOMAIN = "wc"
 
 
 def build(cfg):
@@ -71,7 +74,7 @@ def show(name_a, name_b, elo, params, cfg, neutral, conn=None):
             sys.exit(f"time desconhecido: {t}")
     adv = 0.0 if neutral else cfg["elo"]["home_advantage"]
     r = model.predict_match(elo[name_a], elo[name_b], params, adv,
-                            cfg["model"]["max_goals"])
+                            max_goals=cfg["model"]["max_goals"])
     venue = "campo neutro" if neutral else f"mando de {name_a}"
     print(f"\n{name_a} (Elo {elo[name_a]:.0f}) vs {name_b} (Elo {elo[name_b]:.0f}) — {venue}")
     print(f"  gols esperados: {r['lambda_a']:.2f} x {r['lambda_b']:.2f}  (total {r['total_goals']:.2f})")
@@ -80,6 +83,16 @@ def show(name_a, name_b, elo, params, cfg, neutral, conn=None):
     print(f"  ambos marcam: {r['btts']:.1%}")
     print("  placares mais prováveis: " +
           ", ".join(f"{i}x{j} ({p:.1%})" for (i, j), p in r["top_scores"]))
+
+    emit_event(_DOMAIN, "prediction",
+               metrics={"home_goals_pred": round(float(r["lambda_a"]), 3),
+                        "away_goals_pred": round(float(r["lambda_b"]), 3),
+                        "p_win": round(float(r["p_win"]), 4),
+                        "p_draw": round(float(r["p_draw"]), 4),
+                        "p_loss": round(float(r["p_loss"]), 4)},
+               metadata={"model": "NegBin+DixonColes",
+                         "fixture_id": f"{name_a}_vs_{name_b}",
+                         "neutral": neutral})
 
     if conn is not None:
         mk = _market_probs(conn, name_a, name_b)

@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
 
 def _parse(d: str) -> date:
@@ -67,3 +67,28 @@ def compute_ratings(matches, cfg_elo: dict):
         last_seen[home] = last_seen[away] = today
 
     return dict(ratings), history
+
+
+def ratings_asof(matches, cfg_elo: dict, dates) -> dict:
+    """Snapshot forward-only dos ratings imediatamente ANTES de cada data.
+
+    Fix da auditoria (P3): os scripts de pesquisa usavam `current_elo` — o
+    rating de HOJE — como rating pre-jogo de partidas passadas (lookahead).
+    Este helper devolve {data_iso: {team: rating}} onde cada snapshot enxerga
+    apenas partidas com date < data, aplicando a mesma janela `window_years`
+    do cron RELATIVA a cada data (paridade train/serve).
+
+    matches: iteravel ordenado por data no formato de compute_ratings.
+    dates: iteravel de datas ISO (strings). Custo O(D*N) — aceitavel para
+    pesquisa (D ~ dezenas de datas de evento).
+    """
+    ms = list(matches)
+    window = cfg_elo.get("window_years")
+    out = {}
+    for d in sorted(set(dates)):
+        prefix = [m for m in ms if m[0] < d]
+        if window:
+            cut = (_parse(d) - timedelta(days=int(window * 365.25))).isoformat()
+            prefix = [m for m in prefix if m[0] >= cut]
+        out[d], _ = compute_ratings(prefix, cfg_elo)
+    return out

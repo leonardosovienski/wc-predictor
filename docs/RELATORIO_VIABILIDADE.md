@@ -1,5 +1,10 @@
 # Relatório de viabilidade — o modelo wc-predictor tem edge de aposta?
 
+> **CONFIRMADO em 2026-06-28:** o veredito deste relatório ("sem edge") foi
+> reconfirmado com a régua VÁLIDA — o open-CLV (220 apostas, abertura real via
+> `initialFractionalValue`). 1X2 −15% CLV (sig); o "+18% em OU 2.5" era variância
+> de teste múltiplo (diluiu no pool). Ver VEREDITO no topo do [`HANDOFF.md`](../HANDOFF.md).
+
 > Investigação aprofundada, 2026-06-27. Pergunta central: depois de consertar a
 > coleta e rodar o backtest da Copa 2026 (+44% ROI), o modelo realmente prevê
 > melhor que o acaso e melhor que o mercado — ou o número bonito foi sorte?

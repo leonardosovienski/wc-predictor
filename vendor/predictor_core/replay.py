@@ -50,7 +50,7 @@ class PastView:
         return self._data[idx]
 
 
-def replay(events, handler) -> list:
+def replay(events, handler, *, key=None) -> list:
     """Reexecuta `events` (ORDENADOS NO TEMPO) ponto-a-ponto. Para cada asof, entrega ao
     handler uma PastView só do passado (<= asof) — ele não tem como consultar asof+1.
 
@@ -58,8 +58,24 @@ def replay(events, handler) -> list:
 
     Inversão de controle do LEAN: o motor alimenta, o sinal não consulta. Decisões
     não-None viram o ledger retornado (na ordem temporal).
+
+    `key`: callable(evento) -> timestamp comparável. Se fornecido, a ordem temporal
+    é VERIFICADA (não assumida): eventos fora de ordem levantam ValueError em vez de
+    corromper a semântica de asof silenciosamente — ordem quebrada é leakage temporal.
+
+    CONTRATO DE IMUTABILIDADE: a PastView devolve REFERÊNCIAS aos eventos originais
+    (não cópias). O handler NÃO pode mutar `past.latest` nem itens fatiados — mutar um
+    evento contamina todos os passos futuros (leakage por objeto compartilhado). Passe
+    eventos imutáveis (tuplas/namedtuples/frozen) para que a regra seja estrutural.
     """
     data = tuple(events)
+    if key is not None and len(data) > 1:
+        ts = [key(e) for e in data]
+        bad = next((i for i in range(1, len(ts)) if ts[i] < ts[i - 1]), None)
+        if bad is not None:
+            raise ValueError(
+                f"replay: eventos não monotônicos no tempo (índice {bad}: "
+                f"{ts[bad]!r} < {ts[bad - 1]!r}) — ordem quebrada é leakage temporal")
     ledger = []
     for i in range(len(data)):
         decision = handler(PastView(data, i))

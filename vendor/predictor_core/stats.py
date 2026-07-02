@@ -1,10 +1,8 @@
-"""predictor-core.stats — estimadores estatísticos: ci_mean, block bootstrap, métricas de score."""
+"""predictor-core.stats — estimadores estatísticos: ci_mean (iid) e block bootstrap."""
 import math
 import random
 import logging
 from typing import Callable
-
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +80,8 @@ def block_bootstrap_ci(
     unidade) E a autocorrelação (entre unidades do bloco). Reamostrar colunas
     separado infla o IC da diferença e fabrica "inconclusivo" falso.
 
-    method='moving'    — Moving Block Bootstrap (blocos fixos de tamanho block_length)
+    method='moving'    — Circular Block Bootstrap (blocos fixos block_length, com
+                          wrap circular (start+j)%n — costura o fim ao início da série)
     method='stationary' — Stationary Bootstrap (comprimentos ~ Geométrica(p=1/block_length),
                           índices circulares conforme Politis & Romano 1994)
 
@@ -109,8 +108,22 @@ def block_bootstrap_ci(
                     break
                 resampled.append(series[(start + j) % n])
         stat = statistic(resampled[:n])
-        if stat is not None:        # reamostra degenerada (ex.: Spearman sem variância) cai fora
+        # Descarta reamostra inválida: None (Spearman sem variância) OU não-finita
+        # (Sharpe/Sortino de bloco constante → ±inf/nan). nan quebra o sort() abaixo
+        # (comparações com nan são False → ordem indefinida → percentil lê posição
+        # arbitrária); ±inf desloca o percentil. Ambos corromperiam o IC em silêncio.
+        if stat is not None and math.isfinite(stat):
             boot_stats.append(stat)
+
+    n_valid = len(boot_stats)
+    if n_valid and n_valid < 0.9 * n_boot:
+        # >10% das reamostras inválidas: a distribuição ficou condicionada a um
+        # subconjunto enviesado (IC mais estreito → significância fabricada). Não
+        # silencie — quem consome o veredito precisa saber que ele é suspeito.
+        logger.warning(
+            "block_bootstrap_ci: %d/%d reamostras inválidas descartadas — "
+            "IC calculado sobre subconjunto condicionado, trate como suspeito",
+            n_boot - n_valid, n_boot)
 
     if not boot_stats:
         return None, None, []
@@ -179,14 +192,25 @@ def sortino(returns: list[float], periods_per_year: int = 252) -> float:
     return (mean / downside_std) * math.sqrt(periods_per_year)
 
 
-def max_drawdown(cum_returns: list[float]) -> float:
-    """Max drawdown sobre série de retornos acumulados (equity curve)."""
+def max_drawdown(equity: list[float]) -> float:
+    """Max drawdown sobre uma EQUITY CURVE (nível acumulado, não retornos crus).
+
+    CONTRATO: `equity` é o nível de capital/preço (ex.: 100, 103, 99...), NÃO uma
+    lista de retornos. Passar retornos crus (que oscilam perto de 0) faz `peak`
+    nunca passar de ~0 e o drawdown colapsar para ~0 silenciosamente — bug medido
+    no previsao-cripto/v3. Para equity que cruza zero ou fica negativa (log-equity,
+    conta alavancada), o drawdown relativo perde sentido; aqui levantamos em vez de
+    devolver 0 enganoso."""
     peak = float("-inf")
     mdd = 0.0
-    for v in cum_returns:
+    for v in equity:
         if v > peak:
             peak = v
-        dd = (peak - v) / peak if peak > 0 else 0.0
+        if peak <= 0:
+            raise ValueError(
+                "max_drawdown: equity <= 0 — recebeu retornos crus em vez de "
+                "equity curve? (drawdown relativo indefinido para nível <= 0)")
+        dd = (peak - v) / peak
         if dd > mdd:
             mdd = dd
     return mdd
@@ -212,82 +236,6 @@ def _standardized_moments(data: list) -> tuple:
 def _normal_cdf(z: float) -> float:
     return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
 
-
-# ---------------------------------------------------------------------------
-# ZONA 0 — Métricas de Score Probabilístico (vetorizadas, zero loops Python)
-# Entrada: tensores NumPy P e Y de shape (N, G, G) onde G = max_goals+1 (tipicamente 12).
-# Y é one-hot encoded (exatamente uma célula 1 por partida).
-# ---------------------------------------------------------------------------
-
-def log_loss_matrix(P: np.ndarray, Y: np.ndarray, eps: float = 1e-12) -> float:
-    """Log-Loss (Cross-Entropy) vetorizado para matrizes de placar (N, G, G).
-    P: probabilidades previstas; Y: one-hot. Sem loops Python nativos."""
-    return float(-np.sum(Y * np.log(np.clip(P, eps, 1.0))) / P.shape[0])
-
-
-def brier_score_multiclass(P: np.ndarray, Y: np.ndarray) -> float:
-    """Brier Score Multi-Class vetorizado. BS = mean_n Σ_{i,j} (P_{n,i,j} - Y_{n,i,j})².
-    P, Y: (N, G, G). Varia em [0, 2] para k classes (aqui k=G²)."""
-    return float(np.mean(np.sum((P - Y) ** 2, axis=(1, 2))))
-
-
-def brier_skill_score(P_model: np.ndarray, P_base: np.ndarray, Y: np.ndarray) -> float:
-    """BSS = 1 - BS_model / BS_base.
-    >0 = melhora; 0 = igual ao base; <0 = piora. nan se BS_base=0."""
-    bs_model = brier_score_multiclass(P_model, Y)
-    bs_base = brier_score_multiclass(P_base, Y)
-    return float("nan") if bs_base == 0.0 else 1.0 - bs_model / bs_base
-
-
-def _autocovariances_fft(d_c: np.ndarray, max_lag: int) -> np.ndarray:
-    """Autocovarâncias γ̂_0…γ̂_{max_lag-1} via FFT. Sem loops Python."""
-    n = d_c.shape[0]
-    fft_len = 1 << int(np.ceil(np.log2(2 * n)))   # próxima pot. de 2 evita aliasing
-    D = np.fft.rfft(d_c, n=fft_len)
-    acf_raw = np.fft.irfft(D * np.conj(D)).real[:max_lag]
-    lags = np.arange(max_lag, dtype=float)
-    return acf_raw / np.maximum(n - lags, 1.0)     # normalização não-viesada por lag
-
-
-def diebold_mariano_hln(
-    e1: np.ndarray, e2: np.ndarray, h: int = 1
-) -> tuple[float, float]:
-    """Teste Diebold-Mariano com correção Harvey-Leybourne-Newbold (1997).
-
-    e1, e2: vetores de erros de previsão (N,) — diferencial de perda = e1²-e2².
-    h: horizonte de previsão (padrão 1). Para h>1 a variância espectral inclui
-    as h-1 autocovarâncias (heteroskedasticidade de séries sobrepostas).
-
-    A correção HLN ajusta o numerador pelo fator √((n+1-2h+h(h-1)/n)/n) e usa
-    distribuição t(n-1) em vez da normal — crítico para n<30 (amostras pequenas
-    de temporadas esportivas). Sem loops Python nativos.
-
-    Retorna (dm_hln, p_valor_bilateral). nan se variância nula."""
-    from scipy.stats import t as t_dist
-
-    n = e1.shape[0]
-    d = e1 ** 2 - e2 ** 2          # diferencial de perda quadrática
-    d_bar = d.mean()
-    d_c = d - d_bar
-
-    gamma = _autocovariances_fft(d_c, max(h, 1))
-    # Variância espectral na frequência zero: S² = (γ₀ + 2·Σγ_k) / n
-    s2 = (gamma[0] + 2.0 * gamma[1:].sum()) / n
-
-    if s2 <= 0.0:
-        return float("nan"), float("nan")
-
-    dm = d_bar / np.sqrt(s2)
-
-    # Fator de correção HLN para amostras finitas
-    hln = np.sqrt((n + 1.0 - 2.0 * h + h * (h - 1.0) / n) / n)
-    dm_hln = float(dm * hln)
-
-    p_value = float(2.0 * t_dist.sf(abs(dm_hln), df=n - 1))
-    return dm_hln, p_value
-
-
-# ---------------------------------------------------------------------------
 
 def probabilistic_sharpe_ratio(returns: list, benchmark_sharpe: float = 0.0) -> float:
     """PSR — Probabilistic Sharpe Ratio (Bailey & López de Prado, 2012).

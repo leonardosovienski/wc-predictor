@@ -3,6 +3,9 @@ import sqlite3
 
 from . import db
 from .ingest import ROOT, load_config
+from predictor_core.obs import emit_event
+
+_DOMAIN = "wc"
 
 
 def _count(conn, sql, params=()):
@@ -66,6 +69,14 @@ def run():
         pnl = conn.execute("SELECT SUM(pnl), SUM(stake) FROM backtest_bets").fetchone()
         print("\n[backtest]  -> Quality Gate do modelo")
         print(f"  {bt} apostas liquidadas | P&L {pnl[0]:+.2f}u | ROI {pnl[0] / pnl[1]:+.1%}")
+
+    emit_event(_DOMAIN, "status_check",
+               metrics={"played": float(played or 0),
+                        "fbref_rows": float(fb or 0),
+                        "sofascore_matches": float(ss or 0),
+                        "backtest_bets": float(bt or 0)},
+               metadata={"model_cache": "fresh" if (elo and prow) else "empty",
+                         "db_path": str(ROOT / cfg["database"])})
 
     print("\n" + "-" * 58)
     print("modelo: Binomial Negativa + Dixon-Coles (Elo com decay)")
