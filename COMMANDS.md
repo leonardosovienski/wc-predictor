@@ -59,11 +59,18 @@ pip install -r requirements-dev.txt  # dev/pytest | make install-dev
 | `python -m src.backtest` | `make backtest` | P&L + CLV vs odds → ledger `backtest_bets` + CSV |
 | `python -m src.bootstrap` | `make bootstrap` | IC 95% do ROI e do CLV. **Rode após o backtest** |
 
-## 6. Diagnóstico
+## 6. Diagnóstico e aferição
 
-| Comando | Make | O que faz |
+| Comando | Make / tasks.py | O que faz |
 |---|---|---|
 | `python -m src.status` | `make status` | Painel: o que cada fonte coletou e o que o modelo usa |
+| `python -m src.settle Paraguay France 0 1 --date 2026-07-04` | `tasks.py settle ...` | Registra o resultado real + afere o palpite congelado |
+| `python -m src.settle --stats '{"corners":[2,12],"yellow":[0,3]}'` (com os args) | — | Guarda também os stats crus (escanteio/cartão/chute) |
+| `python -m src.settle --summary` | — | Placar acumulado do modelo por mercado |
+
+> Resultados vão para `data/results.jsonl` (append-only). Cada linha traz palpite +
+> resultado + nota + stats crus. Os stats que o modelo ainda não prevê são guardados
+> mesmo assim — viram matéria-prima do build de escanteio/cartão/chute.
 
 ## 7. Testes
 

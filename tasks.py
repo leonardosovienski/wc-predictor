@@ -30,6 +30,7 @@ TASKS = {
     "backtest":    (["-m", "src.backtest"], "P&L + CLV vs odds"),
     "bootstrap":   (["-m", "src.bootstrap"], "IC 95% do ROI e do CLV (após backtest)"),
     "status":      (["-m", "src.status"], "Painel do estado do banco"),
+    "settle":      (["-m", "src.settle"], "Registra resultado + afere palpite — ex: tasks.py settle Paraguay France 0 1"),
     "test":        (["-m", "pytest", "tests/", "-q"], "Roda a suíte de testes"),
 }
 

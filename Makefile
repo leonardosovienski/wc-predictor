@@ -50,6 +50,8 @@ bootstrap: ## IC 95% do ROI e do CLV (rode após backtest)
 # --- diagnóstico / testes ---
 status: ## Painel do estado do banco e do cache
 	$(PY) -m src.status
+settle: ## Registra resultado + afere palpite — uso: make settle ARGS="Paraguay France 0 1 --date 2026-07-04"
+	$(PY) -m src.settle $(ARGS)
 test:   ## Roda a suíte de testes
 	$(PY) -m pytest tests/ -q
 
