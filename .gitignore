@@ -1,7 +1,13 @@
 # Dados de runtime (o v2 LÊ a produção read-only; nada de dado versionado)
-data/
+# Diretório aberto (não "data/" cheio) para a exceção abaixo alcançar os arquivos.
+data/*
 *.db
 *.log
+
+# EXCEÇÃO: registro obrigatório de palpite/resultado — é auditoria, não runtime
+# descartável. Precisa sobreviver e ser rastreável (quem previu o quê, quando).
+!data/predictions.jsonl
+!data/results.jsonl
 
 # Bytecode / cache
 __pycache__/
