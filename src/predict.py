@@ -64,13 +64,24 @@ def _market_probs(conn, name_a, name_b):
     return None
 
 
-def show(name_a, name_b, elo, params, cfg, neutral, conn=None):
+def show(name_a, name_b, elo, params, cfg, neutral, conn=None, match_date=None):
     for t in (name_a, name_b):
         if t not in elo:
             sys.exit(f"time desconhecido: {t}")
     adv = 0.0 if neutral else cfg["elo"]["home_advantage"]
     r = model.predict_match(elo[name_a], elo[name_b], params, adv,
                             cfg["model"]["max_goals"])
+
+    mk = _market_probs(conn, name_a, name_b) if conn is not None else None
+
+    # OBRIGATÓRIO: congela o PACOTE COMPLETO da predição no momento em que é feita
+    # (append-only). Falha ao gravar é avisada em alto e bom som, mas não derruba o serving.
+    try:
+        from .prediction_log import log_prediction
+        log_prediction(name_a, name_b, neutral, elo[name_a], elo[name_b],
+                       params, r, match_date=match_date, market=mk)
+    except Exception as e:
+        print(f"[AVISO: predição NÃO registrada no log ({e})]", file=sys.stderr)
     venue = "campo neutro" if neutral else f"mando de {name_a}"
     print(f"\n{name_a} (Elo {elo[name_a]:.0f}) vs {name_b} (Elo {elo[name_b]:.0f}) — {venue}")
     print(f"  gols esperados: {r['lambda_a']:.2f} x {r['lambda_b']:.2f}  (total {r['total_goals']:.2f})")
@@ -81,7 +92,6 @@ def show(name_a, name_b, elo, params, cfg, neutral, conn=None):
           ", ".join(f"{i}x{j} ({p:.1%})" for (i, j), p in r["top_scores"]))
 
     if conn is not None:
-        mk = _market_probs(conn, name_a, name_b)
         if mk:
             ma, md, mb, over = mk
             print(f"  mercado 1X2: {name_a} {ma:.1%} | empate {md:.1%} | {name_b} {mb:.1%}"
@@ -117,7 +127,7 @@ def main():
             (args.fixtures,)).fetchall()
         for date, h, a, n in rows:
             print(f"\n[{date}]", end="")
-            show(h, a, elo, params, cfg, bool(n), conn)
+            show(h, a, elo, params, cfg, bool(n), conn, match_date=date)
         return
 
     if len(args.teams) != 2:
