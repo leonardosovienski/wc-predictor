@@ -88,11 +88,18 @@ class Sofascore:
         return [(s["id"], s.get("year")) for s in (d or {}).get("seasons", [])]
 
     def season_events(self, ut_id: int, season_id: int, upcoming: bool = False):
+        """kind='last' = jogos já encerrados (imutáveis, cache seguro).
+        kind='next' = fixtures futuros — placeholder de bracket ('W83', '3C/3E/...')
+        vira nome de time real conforme as fases anteriores terminam no Sofascore;
+        cachear essa lista congela o placeholder pra sempre (bug: coleta repetida
+        nunca via o nome resolvido). NUNCA cachear 'next', mesmo pós-apito o pipeline
+        volta a chamar cache=finished por evento em event_odds/event_statistics."""
         events = []
         for kind in (["last", "next"] if upcoming else ["last"]):
             page = 0
             while page <= 20:
-                d = self._get(f"unique-tournament/{ut_id}/season/{season_id}/events/{kind}/{page}")
+                d = self._get(f"unique-tournament/{ut_id}/season/{season_id}/events/{kind}/{page}",
+                              cache=(kind == "last"))
                 batch = (d or {}).get("events", [])
                 if not batch:
                     break
