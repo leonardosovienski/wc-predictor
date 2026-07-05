@@ -166,10 +166,13 @@ def main():
     # mercado (se houver odds no banco)
     mk = _market_probs(conn, ta, tb)
     if mk:
-        ma, md, mb, over = mk
+        ma, md, mb, over = mk["p_home"], mk["p_draw"], mk["p_away"], mk["overround_1x2"]
         print(f"\nMercado 1X2 (Shin, overround {over:.1%} removido): "
               f"{ta} {ma:.1%} | empate {md:.1%} | {tb} {mb:.1%}")
         print(f"  divergencia modelo-mercado no favorito: {r['p_win'] - ma:+.1%}")
+        if mk["odds_over"] and mk["odds_under"]:
+            print(f"Mercado O/U 2.5 (Shin, overround {mk['overround_ou25']:.1%} removido): "
+                  f"over {mk['p_over']:.1%} | under {mk['p_under']:.1%}")
     else:
         print("\n(sem odds deste confronto no banco — rode ingest_sofascore na rede limpa)")
 
