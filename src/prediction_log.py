@@ -26,8 +26,8 @@ def log_prediction(home, away, neutral, elo_home, elo_away, params, pred,
                    match_date=None, path=None, logged_at=None, market=None) -> dict:
     """Serializa UMA predição como uma linha JSONL — o PACOTE COMPLETO que o motor
     gera para o confronto. `pred` é o dict de model.predict_match. `market` (opcional)
-    = (p_a, p_draw, p_b, overround) de Shin quando há odds. `logged_at`/`path`
-    injetáveis para teste. Retorna o registro gravado."""
+    = dict de predict._market_probs (odds cruas + Shin de 1X2 e O/U) quando há odds.
+    `logged_at`/`path` injetáveis para teste. Retorna o registro gravado."""
     a, b, alpha, rho = params
     over = {str(k): round(v, 4) for k, v in pred["over"].items()}
     record = {
@@ -46,11 +46,30 @@ def log_prediction(home, away, neutral, elo_home, elo_away, params, pred,
         "params": {"a": round(a, 4), "b": round(b, 4),
                    "alpha": round(alpha, 4), "rho": round(rho, 4)},
     }
-    if market is not None:                       # comparação vs mercado (Shin), se houver odds
-        ma, md, mb, over_round = market
-        record["market"] = {"p_home": round(float(ma), 4), "p_draw": round(float(md), 4),
-                            "p_away": round(float(mb), 4), "overround": round(float(over_round), 4),
-                            "edge_home": round(pred["p_win"] - float(ma), 4)}
+    if market is not None:                       # comparação vs mercado, se houver odds
+        # edge vs PREÇO ofertado (1/odd) de CADA seleção — o gatilho validado no
+        # backtest, não o Shin (só mede CLV depois do fato) e não inferido
+        # invertendo o sinal de outra seleção (o vig não se reparte igual entre
+        # as pontas; cada lado tem sua própria conta, igual ao backtest real).
+        record["market"] = {
+            "odds_home": market["odds_home"], "odds_draw": market["odds_draw"],
+            "odds_away": market["odds_away"],
+            "p_home": round(market["p_home"], 4), "p_draw": round(market["p_draw"], 4),
+            "p_away": round(market["p_away"], 4),
+            "overround_1x2": round(market["overround_1x2"], 4),
+            "edge_home_vs_price": round(pred["p_win"] - (1.0 / market["odds_home"]), 4),
+            "edge_draw_vs_price": round(pred["p_draw"] - (1.0 / market["odds_draw"]), 4),
+            "edge_away_vs_price": round(pred["p_loss"] - (1.0 / market["odds_away"]), 4),
+        }
+        if market.get("odds_over") and market.get("odds_under"):
+            p_over = pred["over"][2.5]
+            record["market"].update({
+                "odds_over": market["odds_over"], "odds_under": market["odds_under"],
+                "p_over": round(market["p_over"], 4), "p_under": round(market["p_under"], 4),
+                "overround_ou25": round(market["overround_ou25"], 4),
+                "edge_over_vs_price": round(p_over - (1.0 / market["odds_over"]), 4),
+                "edge_under_vs_price": round((1.0 - p_over) - (1.0 / market["odds_under"]), 4),
+            })
     dest = _resolve(path)
     dest.parent.mkdir(parents=True, exist_ok=True)
     with open(dest, "a", encoding="utf-8") as f:

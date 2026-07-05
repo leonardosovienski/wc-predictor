@@ -11,7 +11,14 @@ _PRED = {
     # numpy.int64 como o motor real devolve — guarda contra regressão de serialização
     "top_scores": [((np.int64(1), np.int64(0)), 0.11), ((np.int64(1), np.int64(1)), 0.10)],
 }
-_MARKET = (0.42, 0.29, 0.29, 0.06)
+_MARKET_1X2_ONLY = {
+    "odds_home": 2.15, "odds_draw": 3.30, "odds_away": 3.60,
+    "p_home": 0.42, "p_draw": 0.29, "p_away": 0.29, "overround_1x2": 0.06,
+    "odds_over": None, "odds_under": None, "p_over": None, "p_under": None,
+    "overround_ou25": None,
+}
+_MARKET_FULL = dict(_MARKET_1X2_ONLY, odds_over=1.90, odds_under=1.95,
+                    p_over=0.48, p_under=0.52, overround_ou25=0.05)
 _PARAMS = (0.22, 1.06, 0.153, -0.039)
 
 
@@ -36,13 +43,30 @@ def test_log_appends_one_jsonl_line(tmp_path):
     assert "logged_at" in rec                     # carimbo de quando foi congelada
 
 
-def test_log_records_market_block_when_odds_present(tmp_path):
+def test_log_records_1x2_market_block_even_without_ou_odds(tmp_path):
     p = tmp_path / "predictions.jsonl"
     log_prediction("A", "B", True, 1600, 1500, _PARAMS, _PRED,
-                   market=_MARKET, path=p)
+                   market=_MARKET_1X2_ONLY, path=p)
     rec = json.loads(p.read_text(encoding="utf-8").splitlines()[0])
-    assert rec["market"]["p_home"] == 0.42 and rec["market"]["overround"] == 0.06
-    assert rec["market"]["edge_home"] == round(0.45 - 0.42, 4)
+    assert rec["market"]["p_home"] == 0.42 and rec["market"]["overround_1x2"] == 0.06
+    # edge vs PREÇO (1/odd) de CADA seleção, não vs Shin e não por sinal invertido
+    # de outro lado (o vig não se reparte igual entre as pontas)
+    assert rec["market"]["edge_home_vs_price"] == round(0.45 - 1 / 2.15, 4)
+    assert rec["market"]["edge_draw_vs_price"] == round(0.28 - 1 / 3.30, 4)
+    assert rec["market"]["edge_away_vs_price"] == round(0.27 - 1 / 3.60, 4)
+    assert "odds_over" not in rec["market"]         # sem odds O/U, sem bloco O/U
+
+
+def test_log_records_ou25_market_block_when_odds_present(tmp_path):
+    p = tmp_path / "predictions.jsonl"
+    log_prediction("A", "B", True, 1600, 1500, _PARAMS, _PRED,
+                   market=_MARKET_FULL, path=p)
+    rec = json.loads(p.read_text(encoding="utf-8").splitlines()[0])
+    assert rec["market"]["p_over"] == 0.48 and rec["market"]["overround_ou25"] == 0.05
+    # over_2.5 do palpite é 0.44 (_PRED); under = 1-0.44 = 0.56 — cada um vs a
+    # própria odd, não um inferido do outro por sinal invertido
+    assert rec["market"]["edge_over_vs_price"] == round(0.44 - 1 / 1.90, 4)
+    assert rec["market"]["edge_under_vs_price"] == round(0.56 - 1 / 1.95, 4)
 
 
 def test_log_respects_env_path(tmp_path, monkeypatch):

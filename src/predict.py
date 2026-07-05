@@ -45,22 +45,41 @@ def _canon(name):
 
 
 def _market_probs(conn, name_a, name_b):
-    """Procura odds entre os dois times no Sofascore e devolve as probabilidades
-    reais de mercado (Shin) na ordem (a, empate, b). None se não houver odds."""
+    """Procura odds entre os dois times no Sofascore (1X2 + Over/Under 2.5) e
+    devolve odds cruas + probabilidades de mercado (Shin), orientadas a
+    (name_a, name_b). Casa por CONJUNTO de nomes, não por ordem (campo neutro:
+    ordem é arbitrária). None se não houver odds para o confronto.
+
+    odds_* são as cruas (para o gatilho de EV vs preço, igual ao backtest:
+    P_modelo > 1/odd — NÃO contra Shin, que só mede CLV depois do fato).
+    p_* (Shin) ficam só como leitura da "probabilidade real" do mercado."""
     try:
         rows = conn.execute(
-            "SELECT home_team, away_team, odds_home, odds_draw, odds_away "
-            "FROM sofascore_matches WHERE odds_home IS NOT NULL").fetchall()
+            "SELECT home_team, away_team, odds_home, odds_draw, odds_away, "
+            "odds_over, odds_under FROM sofascore_matches "
+            "WHERE odds_home IS NOT NULL").fetchall()
     except Exception:
         return None
     na, nb = _canon(name_a), _canon(name_b)
-    for h, a, oh, od, oa in rows:
-        if {_canon(h), _canon(a)} == {na, nb}:
-            from .math_utils import shin_probabilities
-            p, _z, over = shin_probabilities([oh, od, oa])
-            if _canon(h) == na:
-                return float(p[0]), float(p[1]), float(p[2]), over
-            return float(p[2]), float(p[1]), float(p[0]), over
+    for h, a, oh, od, oa, o_over, o_under in rows:
+        if {_canon(h), _canon(a)} != {na, nb}:
+            continue
+        if _canon(h) != na:              # reorienta pra (a, b) como pedido
+            oh, oa = oa, oh
+        from .math_utils import shin_probabilities
+        p1, _z1, over1 = shin_probabilities([oh, od, oa])
+        out = {
+            "odds_home": oh, "odds_draw": od, "odds_away": oa,
+            "p_home": float(p1[0]), "p_draw": float(p1[1]), "p_away": float(p1[2]),
+            "overround_1x2": over1,
+            "odds_over": None, "odds_under": None,
+            "p_over": None, "p_under": None, "overround_ou25": None,
+        }
+        if o_over and o_under:
+            p2, _z2, over2 = shin_probabilities([o_over, o_under])
+            out.update(odds_over=o_over, odds_under=o_under,
+                      p_over=float(p2[0]), p_under=float(p2[1]), overround_ou25=over2)
+        return out
     return None
 
 
@@ -91,16 +110,34 @@ def show(name_a, name_b, elo, params, cfg, neutral, conn=None, match_date=None):
     print("  placares mais prováveis: " +
           ", ".join(f"{i}x{j} ({p:.1%})" for (i, j), p in r["top_scores"]))
 
-    if conn is not None:
-        if mk:
-            ma, md, mb, over = mk
-            print(f"  mercado 1X2: {name_a} {ma:.1%} | empate {md:.1%} | {name_b} {mb:.1%}"
-                  f"  (Shin, overround {over:.1%} removido)")
-            edge = r["p_win"] - ma
-            if abs(edge) >= 0.05:
-                lado = name_a if edge > 0 else name_b
-                print(f"  >> divergência de {abs(edge):.1%} em {lado} — investigar "
-                      f"(modelo {'acima' if edge > 0 else 'abaixo'} do mercado)")
+    if conn is not None and mk:
+        bt = cfg.get("backtest", {})
+        min_edge, max_edge = float(bt.get("min_edge", 0.0)), float(bt.get("max_edge", 1.0))
+
+        print(f"  mercado 1X2: {name_a} {mk['p_home']:.1%} | empate {mk['p_draw']:.1%} | "
+              f"{name_b} {mk['p_away']:.1%}  (Shin, overround {mk['overround_1x2']:.1%} removido)")
+        # gatilho = EV ao PREÇO ofertado (1/odd) de CADA seleção, igual ao
+        # backtest — NÃO contra o Shin (que só mede CLV depois do fato) e NÃO
+        # inferido invertendo o sinal de outro lado: o vig não se reparte igual
+        # entre as pontas, então cada seleção precisa da própria conta.
+        for lado, p_model, odd in ((name_a, r["p_win"], mk["odds_home"]),
+                                   ("empate", r["p_draw"], mk["odds_draw"]),
+                                   (name_b, r["p_loss"], mk["odds_away"])):
+            edge = p_model - (1.0 / odd)
+            if min_edge < edge <= max_edge:
+                print(f"  >> edge 1X2 de {edge:.1%} em {lado} vs preço ofertado "
+                      f"(mercado historicamente NEGATIVO aqui — ver bootstrap antes de apostar)")
+
+        if mk["odds_over"] and mk["odds_under"]:
+            print(f"  mercado O/U 2.5: over {mk['p_over']:.1%} | under {mk['p_under']:.1%}"
+                  f"  (Shin, overround {mk['overround_ou25']:.1%} removido)")
+            p_over = r["over"][2.5]
+            for lado, p_model, odd in (("Over", p_over, mk["odds_over"]),
+                                       ("Under", 1.0 - p_over, mk["odds_under"])):
+                edge = p_model - (1.0 / odd)
+                if min_edge < edge <= max_edge:
+                    print(f"  >> edge O/U de {edge:.1%} em {lado} vs preço ofertado "
+                          f"(único mercado com CLV positivo comprovado no backtest)")
 
 
 def main():
