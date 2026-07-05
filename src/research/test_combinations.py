@@ -166,7 +166,7 @@ def main():
 
     best = results[0]
     print(f"\nMelhor: {best['features']} (melhora={best['improvement']:.4f}, "
-          f"ProbMax: {best['probmax_max_base']:.2%} → {best['probmax_max_feat']:.2%})")
+          f"ProbMax: {best['probmax_max_base']:.2%} -> {best['probmax_max_feat']:.2%})")
 
 
 if __name__ == '__main__':

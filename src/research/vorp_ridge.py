@@ -211,7 +211,7 @@ def run(db_path: str, alpha: float = 1.0):
     print(f"[vorp_ridge] VORP: min={vorps.min():.3f}  p5={np.percentile(vorps,5):.3f}  "
           f"median={np.median(vorps):.3f}  p95={np.percentile(vorps,95):.3f}  "
           f"max={vorps.max():.3f}")
-    print(f"[vorp_ridge] beta_elo={beta_elo:.4f} (positivo = vantagem Elo → mais xG)")
+    print(f"[vorp_ridge] beta_elo={beta_elo:.4f} (positivo = vantagem Elo -> mais xG)")
 
     for pos, rv in sorted(replacement_levels.items()):
         print(f"[vorp_ridge] replacement_level[{pos}] = {rv:.4f}")
@@ -225,7 +225,7 @@ def run(db_path: str, alpha: float = 1.0):
             f"VORP = replacement_level[posição] × {ROOKIE_PENALTY} "
             f"(já aplicado — média dos {int(REPLACEMENT_PERCENTILE*100)}% "
             f"inferiores da posição, penalidade Rookie incluída). "
-            f"Posição desconhecida → chave 'UNKNOWN'."
+            f"Posição desconhecida -> chave 'UNKNOWN'."
         ),
         "train_seasons": list(TRAIN_SEASONS),
         "test_seasons": list(TEST_SEASONS),
@@ -248,7 +248,7 @@ def main():
     if args.out:
         out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(artifact, indent=2, ensure_ascii=False))
+        out_path.write_text(json.dumps(artifact, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"[vorp_ridge] artefato salvo em {out_path}")
     else:
         # resumo compacto

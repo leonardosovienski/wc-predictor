@@ -129,7 +129,7 @@ def main():
     else:
         print("\nCLV: nenhuma aposta na população 'open' ainda — o sinal nasce quando o"
               "\ncron de 2026 acumular abertura+fechamento. A população 'close' não entra"
-              "\naqui: CLV de aposta no próprio fechamento é tautologia (≈ -vig).")
+              "\naqui: CLV de aposta no próprio fechamento é tautologia (~ -vig).")
 
 
 if __name__ == "__main__":

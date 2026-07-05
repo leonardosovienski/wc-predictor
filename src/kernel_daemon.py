@@ -234,7 +234,7 @@ async def _handle_invoke(client, payload_bytes: bytes, params: tuple) -> None:
     elapsed_ms = (t_write - t_recv) * 1000
     network_lag_ms = (t_recv * 1000) - t3_source if t3_source else 0
     log.info(
-        "[kernel] %s → λ=(%.3f,%.3f) compute=%.2fms write=%.2fms total=%.2fms odds=%s",
+        "[kernel] %s -> lambda=(%.3f,%.3f) compute=%.2fms write=%.2fms total=%.2fms odds=%s",
         match_id, lam_a, lam_b,
         (t_compute - t_recv) * 1000,
         (t_write - t_compute) * 1000,
