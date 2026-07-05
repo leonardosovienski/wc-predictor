@@ -3,6 +3,8 @@
 API genérica com suporte a Poisson e Binomial Negativa.
 """
 
+import warnings
+
 import numpy as np
 from scipy.optimize import minimize
 from scipy.stats import poisson, nbinom
@@ -89,35 +91,85 @@ def fit_event_model(
         log_lambda_away = X_away @ beta
         mu_home = np.exp(log_lambda_home)
         mu_away = np.exp(log_lambda_away)
-        # Para NB, parâmetros: n = 1/alpha, p = mu/(mu + n)
+        # Para NB, parâmetros: n = 1/alpha, p = n/(n + mu) — média = n*(1-p)/p = mu.
+        # FIX: a fórmula anterior usava p = mu/(mu+n) (papel de p e 1-p invertido),
+        # uma verossimilhança DIFERENTE da que predict_event() usa pra gerar as
+        # probabilidades (lá, corretamente, p = n_val/(n_val+mu) — linha ~222).
+        # O fit otimizava uma coisa e o predict lia como se fosse outra: (a,b)
+        # saíam sem relação com a média real dos dados (chute a gol > chute
+        # total, cartão médio na casa dos milhões antes do fix de bounds).
         n_val = 1.0 / alpha if alpha > 1e-6 else 1e6
-        ll = np.sum(nbinom.logpmf(home_events, n_val, mu_home/(mu_home + n_val)))
-        ll += np.sum(nbinom.logpmf(away_events, n_val, mu_away/(mu_away + n_val)))
+        ll = np.sum(nbinom.logpmf(home_events, n_val, n_val/(n_val + mu_home)))
+        ll += np.sum(nbinom.logpmf(away_events, n_val, n_val/(n_val + mu_away)))
         return -ll
 
     # 5. Otimização — chute inicial informativo: intercepto = log da media de
     # eventos (garante ponto de partida com verossimilhanca finita), demais 0.
+    #
+    # BOUNDS OBRIGATÓRIOS (fix): a verossimilhança da NB degenera quando o dado
+    # não é overdisperso (var/mean <= 1, ex.: cartões amarelos, var/mean~0.93) —
+    # o otimizador "converge" (res.success=True) com o intercepto fugindo pro
+    # infinito (visto na prática: a=14.7 -> λ≈2.5 MILHÕES de cartões por jogo)
+    # e alpha->0 simultaneamente, sem nenhum sinal de erro. Mesma patologia que
+    # o model.py (gols) já blinda com bounds explícitos — replicada aqui.
     n_params = X.shape[1]
     mean_events = max(float(np.r_[home_events, away_events].mean()), 1e-3)
     beta0 = np.zeros(n_params)
     beta0[0] = np.log(mean_events)
-    if distribution == "nbinom" and overdispersion:
-        initial = np.r_[beta0, 0.1]
-        res = minimize(neg_log_lik_nbinom, initial, method='L-BFGS-B',
-                       bounds=[(None, None)] * n_params + [(1e-6, None)])
-        if res.success:
-            beta = res.x[:-1]
-            alpha = res.x[-1]
+    # intercepto: cobre médias de ~0.05 a ~65 eventos/jogo (folga generosa acima
+    # do maior valor observado em qualquer stat, ex. chutes ~37). coef. de
+    # diff/feature: (-2, 2) — direção informa o sinal, magnitude fica contida.
+    beta_bounds = [(-3.0, 4.2)] + [(-2.0, 2.0)] * (n_params - 1)
+
+    def _check_bounds_and_warn(res, bounds, names):
+        if not res.success:
+            warnings.warn(f"fit_event_model: otimização não convergiu ({res.message})",
+                          RuntimeWarning, stacklevel=3)
+        for name, val, (lo, hi) in zip(names, res.x, bounds):
+            if min(abs(val - lo), abs(val - hi)) < 1e-6:
+                warnings.warn(
+                    f"fit_event_model: parâmetro {name}={val:.4f} cravado no bound "
+                    f"[{lo}, {hi}] — resultado suspeito, confira o histórico de entrada",
+                    RuntimeWarning, stacklevel=3)
+
+    try:
+        if distribution == "nbinom" and overdispersion:
+            # fix: inicializar a NB direto de beta0=zeros deixa o L-BFGS-B travar
+            # num ponto pior que o trivial (visto na prática: negll 4318 vs 2279
+            # no ponto ingênuo, mesmo dentro dos bounds e com res.success=True —
+            # convergência "local" não quer dizer bom ajuste). Ajusta Poisson
+            # primeiro (superfície mais simples, sem alpha) e usa esse (a, b)
+            # como partida da NB — no mesmo dado, isso achou negll=2250 (melhor
+            # que os dois pontos anteriores) com a/b no valor correto.
+            res_p = minimize(neg_log_lik_poisson, beta0, method='L-BFGS-B', bounds=beta_bounds)
+            beta0_nb = res_p.x if res_p.success else beta0
+
+            bounds = beta_bounds + [(1e-6, 5.0)]
+            initial = np.r_[beta0_nb, 0.1]
+            res = minimize(neg_log_lik_nbinom, initial, method='L-BFGS-B', bounds=bounds)
+            _check_bounds_and_warn(res, bounds,
+                                  [f"beta{i}" for i in range(n_params)] + ["alpha"])
+            if res.success:
+                beta = res.x[:-1]
+                alpha = res.x[-1]
+            else:
+                # fallback para Poisson (com os mesmos bounds no intercepto/coefs)
+                distribution = "poisson"
+                res = minimize(neg_log_lik_poisson, beta0, method='L-BFGS-B',
+                              bounds=beta_bounds)
+                beta = res.x if res.success else beta0
+                alpha = None
         else:
-            # fallback para Poisson
-            distribution = "poisson"
-            res = minimize(neg_log_lik_poisson, beta0, method='L-BFGS-B')
+            res = minimize(neg_log_lik_poisson, beta0, method='L-BFGS-B', bounds=beta_bounds)
+            _check_bounds_and_warn(res, beta_bounds, [f"beta{i}" for i in range(n_params)])
             beta = res.x if res.success else beta0
             alpha = None
-    else:
-        res = minimize(neg_log_lik_poisson, beta0, method='L-BFGS-B')
-        beta = res.x if res.success else beta0
+    except Exception:
+        # dado mal-formado ou otimizador instável: fallback conservador —
+        # intercepto na média observada, sem efeito de Elo/feature, sem overdispersão.
+        beta = beta0
         alpha = None
+        distribution = "poisson"
 
     # 6. Montar resultado
     params = {

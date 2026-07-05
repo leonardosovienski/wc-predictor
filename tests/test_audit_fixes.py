@@ -176,6 +176,85 @@ def test_p8_b_recupera_o_sinal_gerador():
 
 
 # ------------------------------------------------------------------ #
+# P11 — NB de event_models.py tinha p/1-p invertidos no fit           #
+# ------------------------------------------------------------------ #
+
+def _synthetic_overdispersed_history(n=400, seed=21, true_mean=12.0, true_b=0.6):
+    """Dados NB de verdade (via mistura gamma-Poisson) com overdispersão real
+    (var/mean > 1) — regime em que o bug do p/1-p invertido divergia."""
+    rng = np.random.default_rng(seed)
+    hist = []
+    shape = 6.0  # controla a overdispersão (menor = mais overdisperso)
+    for _ in range(n):
+        diff = float(rng.normal(0, 250))
+        d = diff / 400.0
+        mu_h = true_mean * np.exp(true_b * d - true_b * 0)  # ~ exp(log(mean)+b*d)
+        mu_a = true_mean * np.exp(-true_b * d)
+        lam_h = rng.gamma(shape=shape, scale=mu_h / shape)
+        lam_a = rng.gamma(shape=shape, scale=mu_a / shape)
+        hist.append({
+            "home_team": "A", "away_team": "B",
+            "home_elo": 1500 + diff / 2, "away_elo": 1500 - diff / 2,
+            "home_event": int(rng.poisson(lam_h)), "away_event": int(rng.poisson(lam_a)),
+        })
+    return hist
+
+
+def test_p11_nb_recupera_a_media_real_nao_a_invertida():
+    """Bug real (2026-07-05): neg_log_lik_nbinom usava p=mu/(mu+n) (papel de p
+    e 1-p trocado) — o fit e o predict_event (que usa a fórmula CERTA,
+    p=n/(n+mu)) otimizavam verossimilhanças DIFERENTES. Resultado observado:
+    'chute a gol' saía com média MAIOR que 'chute total' (logicamente
+    impossível) e exp(a) ficava ~3x longe da média real dos dados."""
+    hist = _synthetic_overdispersed_history()
+    params = fit_event_model(hist, "shots", distribution="nbinom")
+    lam_h, lam_a, _ = predict_event(1500, 1500, params)
+    # d=0 (times iguais): lambda de cada lado deve ficar perto da média real (12)
+    assert lam_h == pytest.approx(12.0, rel=0.35)
+    assert lam_a == pytest.approx(12.0, rel=0.35)
+
+
+def test_p11_b_positivo_recupera_direcao_correta():
+    hist = _synthetic_overdispersed_history()
+    params = fit_event_model(hist, "shots", distribution="nbinom")
+    assert params["b"] > 0    # time mais forte gera mais eventos, não menos
+
+
+# ------------------------------------------------------------------ #
+# P12 — bounds no NB: dado ~Poisson (var/mean<=1) não pode divergir   #
+# ------------------------------------------------------------------ #
+
+def _synthetic_poisson_like_history(n=300, seed=5, true_mean=2.0):
+    """Dado SEM overdispersão (var/mean ~ 1, ex.: cartões amarelos reais têm
+    var/mean~0.93) — regime em que a NB degenera sem bounds: o otimizador
+    'convergia' (res.success=True) com o intercepto fugindo pro infinito."""
+    rng = np.random.default_rng(seed)
+    hist = []
+    for _ in range(n):
+        diff = float(rng.normal(0, 200))
+        d = diff / 400.0
+        hist.append({
+            "home_team": "A", "away_team": "B",
+            "home_elo": 1500 + diff / 2, "away_elo": 1500 - diff / 2,
+            "home_event": int(rng.poisson(true_mean * np.exp(0.1 * d))),
+            "away_event": int(rng.poisson(true_mean * np.exp(-0.1 * d))),
+        })
+    return hist
+
+
+def test_p12_nb_em_dado_poisson_nao_diverge():
+    """Sem bounds, isso divergia pra λ na casa dos milhões (visto na prática
+    com cartões amarelos reais: exp(a)≈2.5 milhões). Com bounds, o intercepto
+    fica contido numa região plausível mesmo quando a NB não é o modelo certo
+    pra esse dado (var/mean<=1)."""
+    hist = _synthetic_poisson_like_history()
+    with pytest.warns(RuntimeWarning):     # bound do intercepto acionado — esperado
+        params = fit_event_model(hist, "cards", distribution="nbinom")
+    lam_h, lam_a, _ = predict_event(1500, 1500, params)
+    assert lam_h < 50 and lam_a < 50       # nada de milhões de cartões
+
+
+# ------------------------------------------------------------------ #
 # P2/P7 — load_event_data filtra período; gatilho usa abertura        #
 # ------------------------------------------------------------------ #
 
