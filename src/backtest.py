@@ -421,7 +421,7 @@ def _report(ledger):
     for mkt in sorted({b["market"] for b in ledger}):
         _line(mkt, [b for b in ledger if b["market"] == mkt])
 
-    print("\nCLV — a régua de baixa variância (odd pactuada × Shin do fechamento − 1):")
+    print("\nCLV — a régua de baixa variância (odd pactuada × Shin do fechamento - 1):")
     for label, pop in (("open", [b for b in ledger if b["bet_at"] == "open"]),
                        ("close*", [b for b in ledger if b["bet_at"] == "close"])):
         if not pop:
@@ -431,7 +431,7 @@ def _report(ledger):
         beat = sum(b["beat_close"] for b in pop) / len(pop)
         print(f"  {label:<8}{len(pop):>5} apostas | CLV médio {mean_clv:+.2%} | "
               f"bateram o fechamento {beat:.1%}")
-    print("  (*) população 'close' é paliativa: aposta no próprio fechamento ⇒ CLV ≈ −vig"
+    print("  (*) população 'close' é paliativa: aposta no próprio fechamento -> CLV ~ -vig"
           "\n      por construção. Sinal real só na população 'open'. IC 95%: src.bootstrap")
 
     print("\ncalibração por faixa de edge (vs preço) — o veredito genial vs ruído:")
