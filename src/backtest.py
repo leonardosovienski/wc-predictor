@@ -221,10 +221,10 @@ def _settle(market, selection, p_model, p_shin_close, odd_open, odd_close,
     Preço da aposta = ABERTURA quando existe (janela viável da vida real),
     fechamento como paliativo na base histórica (bet_at marca a população —
     no relatório elas não se misturam). Gatilho e P&L liquidam no preço
-    pactuado. CLV = odd_pactuada × p_shin_close − 1: a régua de baixa
+    pactuado. CLV = odd_pactuada × p_shin_close - 1: a régua de baixa
     variância — o mercado fechou a meu favor? NOTA: na população
     bet_at='close' o CLV é tautológico (mede o preço contra ele mesmo
-    de-vigado ⇒ ~−vig sistemático); só a população 'open' carrega sinal."""
+    de-vigado -> ~-vig sistemático); só a população 'open' carrega sinal."""
     odd = odd_open if (odd_open and odd_open > 1.0) else odd_close
     bet_at = "open" if (odd_open and odd_open > 1.0) else "close"
     if odd is None or odd <= 1.0:
