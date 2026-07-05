@@ -11,6 +11,9 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .predict import _canon        # reusa os aliases (South Korea/Korea Republic,
+                                    # USA/United States, etc.) — não duplica a lista
+
 ROOT = Path(__file__).resolve().parent.parent
 PRED_PATH = ROOT / "data" / "predictions.jsonl"
 RESULTS_PATH = ROOT / "data" / "results.jsonl"
@@ -22,24 +25,39 @@ STAT_KEYS = ("possession", "xg", "big_chances", "shots", "shots_on_target",
              "gk_saves", "corners", "fouls", "passes", "tackles", "yellow", "red")
 
 
-def _canon(name):
-    return (name or "").lower().strip()
-
-
 def _find_prediction(home, away, match_date=None, pred_path=None):
-    """Última predição congelada para o confronto (por nomes + data, se dada)."""
+    """Última predição congelada para o confronto (por nomes + data, se dada).
+    Casa por CONJUNTO de times, não por ordem — em campo neutro (toda a Copa) a
+    ordem casa/fora é arbitrária; exigir a mesma ordem faz o palpite existente
+    "sumir" (falso negativo) se o resultado for registrado na ordem invertida."""
     p = Path(pred_path or PRED_PATH)
     if not p.exists():
         return None
-    ch, ca = _canon(home), _canon(away)
+    target = frozenset((_canon(home), _canon(away)))
     hit = None
     for line in p.read_text(encoding="utf-8").splitlines():
         r = json.loads(line)
-        if _canon(r["home"]) == ch and _canon(r["away"]) == ca:
+        if frozenset((_canon(r["home"]), _canon(r["away"]))) == target:
             if match_date and r.get("match_date") != match_date:
                 continue
             hit = r          # fica com a mais recente
     return hit
+
+
+def _orient(pred, home, away):
+    """Realinha o palpite para a ordem casa/fora com que o RESULTADO está sendo
+    informado — se o predict.py congelou 'Norway vs Brazil' e o resultado chega
+    como 'Brazil, Norway', p_home/p_away e lambda_* precisam trocar de lado, ou
+    a nota do palpite (winner/placar) sai invertida."""
+    if _canon(pred["home"]) == _canon(home):
+        return pred
+    swapped = dict(pred)
+    swapped["home"], swapped["away"] = pred["away"], pred["home"]
+    swapped["p_home"], swapped["p_away"] = pred["p_away"], pred["p_home"]
+    swapped["lambda_home"], swapped["lambda_away"] = pred["lambda_away"], pred["lambda_home"]
+    # placares em top_scores são (gols_casa, gols_fora) — inverte cada par também
+    swapped["top_scores"] = [[[sc[1], sc[0]], p] for sc, p in pred["top_scores"]]
+    return swapped
 
 
 def grade(pred, home_score, away_score):
@@ -76,6 +94,8 @@ def record_result(home, away, home_score, away_score, *, match_date=None,
     """Grava uma linha em results.jsonl: palpite + resultado + nota + stats crus.
     `stats` = dict com chaves de STAT_KEYS, cada valor [casa, fora]."""
     pred = _find_prediction(home, away, match_date, pred_path)
+    if pred is not None:
+        pred = _orient(pred, home, away)
     hs, as_ = int(home_score), int(away_score)
     record = {
         "recorded_at": recorded_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
