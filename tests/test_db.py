@@ -50,6 +50,21 @@ def test_close_sempre_sobrescreve(conn):
     assert ou == 1.55
 
 
+def test_upsert_resolve_placeholder_de_bracket_para_nome_real(conn):
+    """Bug real: a 1ª coleta grava o evento com placeholder de bracket
+    ('W83'/'W84', antes do Sofascore saber quem classificou); a 2ª coleta do
+    MESMO event_id já traz o nome resolvido ('Mexico'/'England'). Sem
+    home_team/away_team no ON CONFLICT DO UPDATE, o upsert mantinha o
+    placeholder da 1ª coleta pra sempre — parecia atraso do Sofascore, era o
+    upsert descartando o nome novo."""
+    db.upsert_ss_matches(conn, [_row(20, home_team="W83", away_team="W84")])
+    db.upsert_ss_matches(conn, [_row(20, home_team="Mexico", away_team="England",
+                                     odds_home=2.05)])
+    home, away = conn.execute(
+        "SELECT home_team, away_team FROM sofascore_matches WHERE event_id=20").fetchone()
+    assert (home, away) == ("Mexico", "England")
+
+
 def test_snapshots_idempotentes(conn):
     snap = (10, "2026-06-17T10:00:00Z", "1x2", "home", 2.10, 1)
     n1 = db.insert_snapshots(conn, [snap])

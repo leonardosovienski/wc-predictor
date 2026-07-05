@@ -156,6 +156,13 @@ INSERT INTO sofascore_matches (event_id, competition, season, date, home_team,
     odds_home_open, odds_draw_open, odds_away_open, odds_over_open, odds_under_open)
 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(event_id) DO UPDATE SET
+    -- nome de time resolve de placeholder de bracket ('W83') pro time real
+    -- conforme o Sofascore fecha as fases anteriores; sem isso a 2ª coleta
+    -- do MESMO event_id mantinha o placeholder da 1ª pra sempre (bug real:
+    -- fazia parecer que o Sofascore nunca resolvia o nome, quando na
+    -- verdade era o upsert descartando o nome novo em silêncio).
+    competition=excluded.competition, season=excluded.season, date=excluded.date,
+    home_team=excluded.home_team, away_team=excluded.away_team,
     home_score=excluded.home_score, away_score=excluded.away_score,
     home_xg=excluded.home_xg, away_xg=excluded.away_xg,
     -- odds_* = FECHAMENTO: a última leitura sempre vence
