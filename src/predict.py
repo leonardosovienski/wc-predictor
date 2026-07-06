@@ -86,7 +86,8 @@ def _market_probs(conn, name_a, name_b):
     return None
 
 
-def show(name_a, name_b, elo, params, cfg, neutral, conn=None, match_date=None):
+def show(name_a, name_b, elo, params, cfg, neutral, conn=None, match_date=None,
+        level=0, as_json=False):
     for t in (name_a, name_b):
         if t not in elo:
             sys.exit(f"time desconhecido: {t}")
@@ -104,15 +105,6 @@ def show(name_a, name_b, elo, params, cfg, neutral, conn=None, match_date=None):
     except Exception as e:
         print(f"[AVISO: predição NÃO registrada no log ({e})]", file=sys.stderr)
 
-    venue = "campo neutro" if neutral else f"mando de {name_a}"
-    print(f"\n{name_a} (Elo {elo[name_a]:.0f}) vs {name_b} (Elo {elo[name_b]:.0f}) — {venue}")
-    print(f"  gols esperados: {r['lambda_a']:.2f} x {r['lambda_b']:.2f}  (total {r['total_goals']:.2f})")
-    print(f"  modelo  1X2: {name_a} {r['p_win']:.1%} | empate {r['p_draw']:.1%} | {name_b} {r['p_loss']:.1%}")
-    print(f"  over 1.5: {r['over'][1.5]:.1%} | over 2.5: {r['over'][2.5]:.1%} | over 3.5: {r['over'][3.5]:.1%}")
-    print(f"  ambos marcam: {r['btts']:.1%}")
-    print("  placares mais prováveis: " +
-          ", ".join(f"{i}x{j} ({p:.1%})" for (i, j), p in r["top_scores"]))
-
     emit_event(_DOMAIN, "prediction",
                metrics={"home_goals_pred": round(float(r["lambda_a"]), 3),
                         "away_goals_pred": round(float(r["lambda_b"]), 3),
@@ -123,35 +115,9 @@ def show(name_a, name_b, elo, params, cfg, neutral, conn=None, match_date=None):
                          "fixture_id": f"{name_a}_vs_{name_b}",
                          "neutral": neutral})
 
-    if conn is not None:
-        if mk:
-            bt = cfg.get("backtest", {})
-            min_edge, max_edge = float(bt.get("min_edge", 0.0)), float(bt.get("max_edge", 1.0))
-
-            print(f"  mercado 1X2: {name_a} {mk['p_home']:.1%} | empate {mk['p_draw']:.1%} | "
-                  f"{name_b} {mk['p_away']:.1%}  (Shin, overround {mk['overround_1x2']:.1%} removido)")
-            # gatilho = EV ao PREÇO ofertado (1/odd) de CADA seleção, igual ao
-            # backtest — NÃO contra o Shin (só mede CLV depois do fato) e NÃO
-            # inferido invertendo o sinal de outro lado: o vig não se reparte
-            # igual entre as pontas, cada seleção precisa da própria conta.
-            for lado, p_model, odd in ((name_a, r["p_win"], mk["odds_home"]),
-                                       ("empate", r["p_draw"], mk["odds_draw"]),
-                                       (name_b, r["p_loss"], mk["odds_away"])):
-                edge = p_model - (1.0 / odd)
-                if min_edge < edge <= max_edge:
-                    print(f"  >> edge 1X2 de {edge:.1%} em {lado} vs preço ofertado "
-                          f"(mercado historicamente NEGATIVO aqui — ver bootstrap antes de apostar)")
-
-            if mk["odds_over"] and mk["odds_under"]:
-                print(f"  mercado O/U 2.5: over {mk['p_over']:.1%} | under {mk['p_under']:.1%}"
-                      f"  (Shin, overround {mk['overround_ou25']:.1%} removido)")
-                p_over = r["over"][2.5]
-                for lado, p_model, odd in (("Over", p_over, mk["odds_over"]),
-                                           ("Under", 1.0 - p_over, mk["odds_under"])):
-                    edge = p_model - (1.0 / odd)
-                    if min_edge < edge <= max_edge:
-                        print(f"  >> edge O/U de {edge:.1%} em {lado} vs preço ofertado "
-                              f"(único mercado com CLV positivo comprovado no backtest)")
+    from . import display
+    data = display.compute(name_a, name_b, elo, params, cfg, neutral, conn)
+    display.render(data, level=level, as_json=as_json)
 
 
 def main():
@@ -161,7 +127,17 @@ def main():
     ap.add_argument("--fixtures", type=int, metavar="N",
                     help="prevê os próximos N fixtures da base")
     ap.add_argument("--rankings", type=int, metavar="N", help="top N do Elo")
+    verbosity = ap.add_mutually_exclusive_group()
+    verbosity.add_argument("--expand", action="store_true",
+                           help="nível 1: gols esperados, edge detalhado, placar top-1")
+    verbosity.add_argument("--stats", action="store_true",
+                           help="nível 2: Shin completo, placares top-5, parâmetros do modelo")
+    verbosity.add_argument("--full", action="store_true",
+                           help="nível 3: dupla chance, draw no bet, handicap asiático")
+    verbosity.add_argument("--json", action="store_true",
+                           help="saída estruturada (machine-output), ignora os outros níveis")
     args = ap.parse_args()
+    level = 3 if args.full else 2 if args.stats else 1 if args.expand else 0
 
     cfg = load_config()
     conn, elo, params = build(cfg)
@@ -178,12 +154,14 @@ def main():
             (args.fixtures,)).fetchall()
         for date, h, a, n in rows:
             print(f"\n[{date}]", end="")
-            show(h, a, elo, params, cfg, bool(n), conn, match_date=date)
+            show(h, a, elo, params, cfg, bool(n), conn, match_date=date,
+                level=level, as_json=args.json)
         return
 
     if len(args.teams) != 2:
         ap.error("informe TIME_A TIME_B, ou use --fixtures/--rankings")
-    show(args.teams[0], args.teams[1], elo, params, cfg, args.neutral, conn)
+    show(args.teams[0], args.teams[1], elo, params, cfg, args.neutral, conn,
+        level=level, as_json=args.json)
 
 
 if __name__ == "__main__":

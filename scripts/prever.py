@@ -4,17 +4,19 @@ Uso:
     python scripts/prever.py Spain Austria              # campo neutro (padrao Copa)
     python scripts/prever.py Brazil France --mando      # com vantagem de mando p/ o 1o time
     python scripts/prever.py Spain Austria --mata-mata  # inclui P(classificar)
+    python scripts/prever.py Spain Austria --json       # machine-output
 
-Entrega junta: 1X2, P(classificar) [mata-mata], gols esperados, Over/Under
-0.5-5.5, BTTS, dupla chance, draw no bet, handicap asiatico, placares exatos,
-escanteios e cartoes (modelo de eventos assimetrico + ajuste a media do
-torneio), e comparacao com o mercado Shin quando ha odds no banco.
+Entrega o pacote completo (Nivel 3 / --full de src/display.py) mais dois
+extras exclusivos deste script: P(classificar) em mata-mata e escanteios/
+cartoes (modelo de eventos, exige historico via `conn` que src/predict.py
+nao consulta). Cálculo e exibição dos mercados de gol vêm de
+`src/display.py` — mesma fonte que `python -m src.predict` usa, sem
+duplicação.
 
-Read-only no banco. Regua: o backtest mostrou CLV -8,7% vs fechamento —
-isto e' referencia de cenario, nao sinal de aposta.
+Read-only no banco. CLV histórico exibido vem do cache gravado por
+`python -m src.bootstrap` (não é mais hardcoded no código-fonte).
 """
 import argparse
-import math
 import sqlite3
 import sys
 from pathlib import Path
@@ -25,11 +27,9 @@ sys.path.insert(0, str(ROOT / "vendor"))
 
 from scipy.stats import poisson
 
-from src.model import predict_match
-from src import market_pricer as mp
+from src import display
 from src.event_models import fit_event_model, predict_event
 from src.ingest import load_config
-from src.predict import _market_probs
 
 
 def _conn_ro():
@@ -93,6 +93,8 @@ def main():
                     help="1o time joga em casa (padrao: campo neutro)")
     ap.add_argument("--mata-mata", action="store_true", dest="ko",
                     help="inclui P(classificar) — empate resolvido por Elo")
+    ap.add_argument("--json", action="store_true",
+                    help="saida estruturada (machine-output)")
     args = ap.parse_args()
 
     cfg = load_config()
@@ -111,73 +113,30 @@ def main():
             sys.exit(f"time desconhecido: {t}" +
                      (f" — voce quis dizer {sugest}?" if sugest else ""))
 
-    adv = cfg["elo"]["home_advantage"] if args.mando else 0.0
-    r = predict_match(elo[ta], elo[tb], params, adv,
-                      max_goals=cfg["model"]["max_goals"])
-    g = r["grid"]
+    # todo o calculo + as 4 camadas de exibicao (Nivel 0..3) vem do mesmo
+    # modulo que src/predict.py usa — ver src/display.py. O que fica so
+    # aqui e' o que so o prever.py tem: mata-mata, escanteios/cartoes
+    # (precisam de historico via conn, que predict.py nao consulta).
+    data = display.compute(ta, tb, elo, params, cfg, neutral=not args.mando, conn=conn)
+    display.render(data, level=3, as_json=args.json)
+    if args.json:
+        conn.close()
+        return
 
-    venue = f"mando de {ta}" if args.mando else "campo neutro"
-    print(f"{'=' * 62}\n{ta} (Elo {elo[ta]:.0f}) x {tb} (Elo {elo[tb]:.0f}) — {venue}\n{'=' * 62}")
-
-    # 1X2 + mata-mata
-    print(f"\n1X2: {ta} {r['p_win']:.1%} | empate {r['p_draw']:.1%} | {tb} {r['p_loss']:.1%}")
     if args.ko:
+        adv = cfg["elo"]["home_advantage"] if args.mando else 0.0
         p_pen = 1.0 / (1.0 + 10 ** (-(elo[ta] + adv - elo[tb]) / 400.0))
-        pa = r["p_win"] + r["p_draw"] * p_pen
-        print(f"P(classificar): {ta} {pa:.1%} | {tb} {1 - pa:.1%}"
+        pa = data["core"]["p_win"] + data["core"]["p_draw"] * p_pen
+        print(f"\nP(classificar): {ta} {pa:.1%} | {tb} {1 - pa:.1%}"
               f"  (empate no 90' resolvido pela logistica de Elo)")
 
-    # gols
-    print(f"\nGols esperados: {r['lambda_a']:.2f} x {r['lambda_b']:.2f} "
-          f"(total {r['total_goals']:.2f})")
-    print("Over: " + " | ".join(
-        f"{ln}: {mp.over_under(g, ln)['Over']:.1%}" for ln in (0.5, 1.5, 2.5, 3.5, 4.5, 5.5)))
-    print(f"Ambos marcam: {r['btts']:.1%}")
-
-    # DC / DNB
-    dc = mp.double_chance(g)
-    dnb = mp.draw_no_bet(g)
-    d1, d2 = dnb["1"], dnb["2"]
-    print(f"\nDupla chance: 1X {dc['1X']:.1%} | 12 {dc['12']:.1%} | X2 {dc['X2']:.1%}")
-    print(f"Draw No Bet: {ta} {d1['win'] / (d1['win'] + d1['lose']):.1%} | "
-          f"{tb} {d2['win'] / (d2['win'] + d2['lose']):.1%} (push {d1['push']:.1%})")
-
-    # AH: linhas centradas na supremacia esperada
-    center = -round((r["lambda_a"] - r["lambda_b"]) * 4) / 4
-    print(f"\nHandicap asiatico (lado {ta}):")
-    for off in (-0.5, -0.25, 0.0, 0.25, 0.5):
-        line = center + off
-        ah = mp.asian_handicap(g, line)
-        print(f"  {line:+.2f}: win {ah['win']:.1%} | push {ah['push']:.1%} | "
-              f"lose {ah['lose']:.1%}")
-
-    # placares
-    top = sorted(((i, j, g[i, j]) for i in range(g.shape[0])
-                  for j in range(g.shape[1])), key=lambda x: -x[2])[:8]
-    print("\nPlacares mais provaveis: " +
-          ", ".join(f"{i}x{j} {p:.1%}" for i, j, p in top))
-
-    # eventos nao-gols
+    # eventos nao-gols: exclusivo do prever.py, exige historico de
+    # match_statistics que so este script consulta.
     _print_event_block("Escanteios", conn, "Corner kicks", elo, ta, tb,
                        (7.5, 8.5, 9.5))
     _print_event_block("Cartoes amarelos", conn, "Yellow cards", elo, ta, tb,
                        (2.5, 3.5, 4.5))
 
-    # mercado (se houver odds no banco)
-    mk = _market_probs(conn, ta, tb)
-    if mk:
-        ma, md, mb, over = mk["p_home"], mk["p_draw"], mk["p_away"], mk["overround_1x2"]
-        print(f"\nMercado 1X2 (Shin, overround {over:.1%} removido): "
-              f"{ta} {ma:.1%} | empate {md:.1%} | {tb} {mb:.1%}")
-        print(f"  divergencia modelo-mercado no favorito: {r['p_win'] - ma:+.1%}")
-        if mk["odds_over"] and mk["odds_under"]:
-            print(f"Mercado O/U 2.5 (Shin, overround {mk['overround_ou25']:.1%} removido): "
-                  f"over {mk['p_over']:.1%} | under {mk['p_under']:.1%}")
-    else:
-        print("\n(sem odds deste confronto no banco — rode ingest_sofascore na rede limpa)")
-
-    print("\nRegua: CLV historico do modelo vs fechamento = -8,7% — referencia de"
-          "\ncenario e sanity-check, NAO sinal de aposta (docs/COPA_2026_PLAYBOOK.md).")
     conn.close()
 
 

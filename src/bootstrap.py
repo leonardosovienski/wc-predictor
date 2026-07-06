@@ -14,7 +14,15 @@ Duas métricas, duas naturezas:
 
 Roda DEPOIS de `python -m src.backtest` (que materializa o ledger).
 Config opcional em backtest.: bootstrap_iterations (1000), bootstrap_seed (13).
-"""
+
+Cache para consumo por outras CLIs (`src/display.py`): toda vez que este
+módulo roda, grava `data/bootstrap_cache.json` com o CLV por mercado
+(população 'open'). Existe pra que `predict`/`prever` mostrem o número real
+sem recalcular 1000 reamostragens a cada chamada (custaria a resposta
+instantânea do cache de Elo) e sem hardcodar a string no código-fonte (o
+`-8,7%` fixo em `scripts/prever.py` já tinha divergido do valor real -8,37%
+antes desta mudança — exatamente o bug que este cache elimina)."""
+import json
 import sys
 
 import numpy as np
@@ -23,6 +31,7 @@ from . import db
 from .ingest import ROOT, load_config
 
 BANDS = [(0.0, 0.05), (0.05, 0.10), (0.10, 0.15), (0.15, 1.01)]
+CACHE_PATH = ROOT / "data" / "bootstrap_cache.json"
 
 
 def ci_mean(values, iterations: int, rng) -> tuple[float, float, float]:
@@ -99,6 +108,35 @@ def _section(title, bets, metric, iterations, rng):
         _row(f"edge {lo:.0%}-{hi:.0%}", sub, iterations, rng)
 
 
+def _clv_cache_entry(label, pairs, iterations, rng):
+    """Mesmo cálculo de `_row`, mas devolvendo dict em vez de imprimir —
+    usado só pra montar o cache de CLV consumido por `src/display.py`."""
+    n = len(pairs)
+    if n < 2:
+        return None
+    n_games = len({c for _v, c in pairs})
+    mean, lo, hi = ci_mean_cluster(pairs, iterations, rng)
+    return {"n": n, "n_games": n_games, "mean": mean, "ci_low": lo, "ci_high": hi,
+            "significant": bool(lo > 0 or hi < 0)}
+
+
+def save_clv_cache(open_bets, iterations, rng, computed_at):
+    """Grava data/bootstrap_cache.json com o CLV por mercado (população
+    'open') pra leitura instantânea por outras CLIs — ver docstring do módulo."""
+    entries = {}
+    total = _clv_cache_entry("total", [(b["clv"], _game_key(b)) for b in open_bets],
+                             iterations, rng)
+    if total:
+        entries["total"] = total
+    for mkt in ("1x2", "ou25"):
+        e = _clv_cache_entry(mkt, [(b["clv"], _game_key(b)) for b in open_bets
+                                    if b["market"] == mkt], iterations, rng)
+        if e:
+            entries[mkt] = e
+    CACHE_PATH.write_text(json.dumps({"computed_at": computed_at, "markets": entries},
+                                     indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def main():
     cfg = load_config()
     bt = cfg.get("backtest", {})
@@ -126,6 +164,10 @@ def main():
     if open_bets:
         _section(f"CLV (população bet_at='open', n={len(open_bets)}) — a régua que "
                  "converge com dezenas:", open_bets, "clv", iterations, rng)
+        import datetime
+        computed_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        save_clv_cache(open_bets, iterations, rng, computed_at)
+        print(f"\n[cache gravado: {CACHE_PATH.relative_to(ROOT)}]")
     else:
         print("\nCLV: nenhuma aposta na população 'open' ainda — o sinal nasce quando o"
               "\ncron de 2026 acumular abertura+fechamento. A população 'close' não entra"
