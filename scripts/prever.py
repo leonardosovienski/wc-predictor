@@ -25,10 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "vendor"))
 
-from scipy.stats import poisson
-
 from src import display
-from src.event_models import fit_event_model, predict_event
 from src.ingest import load_config
 
 
@@ -36,53 +33,6 @@ def _conn_ro():
     c = sqlite3.connect(f"file:{ROOT / 'data' / 'matches.db'}?mode=ro", uri=True)
     c.execute("PRAGMA query_only=ON")
     return c
-
-
-def _event_history(conn, stat_name, elo):
-    rows = conn.execute("""
-        SELECT sm.home_team, sm.away_team, h.value, a.value
-        FROM sofascore_matches sm
-        JOIN match_statistics h ON h.event_id=sm.event_id AND h.period='ALL'
-          AND h.stat_name=? AND h.team='home'
-        JOIN match_statistics a ON a.event_id=sm.event_id AND a.period='ALL'
-          AND a.stat_name=? AND a.team='away'
-        WHERE sm.home_score IS NOT NULL""", (stat_name, stat_name)).fetchall()
-    return [{"home_team": h, "away_team": aw, "home_elo": elo.get(h, 1500),
-             "away_elo": elo.get(aw, 1500), "home_event": hv, "away_event": av}
-            for h, aw, hv, av in rows]
-
-
-def _tournament_avg(conn, stat_name, competition="World Cup 2026"):
-    row = conn.execute("""
-        SELECT AVG(h.value+a.value), COUNT(*)
-        FROM sofascore_matches sm
-        JOIN match_statistics h ON h.event_id=sm.event_id AND h.period='ALL'
-          AND h.stat_name=? AND h.team='home'
-        JOIN match_statistics a ON a.event_id=sm.event_id AND a.period='ALL'
-          AND a.stat_name=? AND a.team='away'
-        WHERE sm.competition=?""", (stat_name, stat_name, competition)).fetchone()
-    return row if row and row[1] else (None, 0)
-
-
-def _print_event_block(nome, conn, stat_name, elo, ta, tb, lines):
-    hist = _event_history(conn, stat_name, elo)
-    if len(hist) < 30:
-        print(f"\n{nome}: dados insuficientes ({len(hist)} jogos)")
-        return
-    params = fit_event_model(hist, stat_name, distribution="poisson")
-    lh, la, probs = predict_event(elo.get(ta, 1500), elo.get(tb, 1500), params)
-    lam = lh + la
-    print(f"\n{nome} (n={len(hist)} jogos, b={params['b']:+.2f}):"
-          f"  {ta} {lh:.1f} + {tb} {la:.1f} = {lam:.1f} esperados")
-    print("  modelo:   " + " | ".join(
-        f"Ov{ln}: {probs[f'over_{ln}']:.0%}" for ln in lines))
-    wc_avg, n_wc = _tournament_avg(conn, stat_name)
-    if wc_avg and len(hist) > n_wc:
-        base_avg = sum(h["home_event"] + h["away_event"] for h in hist) / len(hist)
-        lam_adj = lam * (wc_avg / base_avg)
-        print(f"  ajustado ao torneio (media Copa {wc_avg:.1f} vs base {base_avg:.1f}"
-              f" -> lambda {lam_adj:.1f}): " + " | ".join(
-              f"Ov{ln}: {1 - poisson.cdf(ln, lam_adj):.0%}" for ln in lines))
 
 
 def main():
@@ -131,11 +81,13 @@ def main():
               f"  (empate no 90' resolvido pela logistica de Elo)")
 
     # eventos nao-gols: exclusivo do prever.py, exige historico de
-    # match_statistics que so este script consulta.
-    _print_event_block("Escanteios", conn, "Corner kicks", elo, ta, tb,
-                       (7.5, 8.5, 9.5))
-    _print_event_block("Cartoes amarelos", conn, "Yellow cards", elo, ta, tb,
-                       (2.5, 3.5, 4.5))
+    # match_statistics que so este script consulta. Calculo/exibicao vem de
+    # display.compute_event/render_event — mesma funcao que --corners/--cards
+    # em src/predict.py usa, sem duplicacao.
+    display.render_event("Escanteios", display.compute_event(conn, elo, ta, tb,
+                         "Corner kicks", (7.5, 8.5, 9.5)), ta, tb, (7.5, 8.5, 9.5))
+    display.render_event("Cartoes amarelos", display.compute_event(conn, elo, ta, tb,
+                         "Yellow cards", (2.5, 3.5, 4.5)), ta, tb, (2.5, 3.5, 4.5))
 
     conn.close()
 

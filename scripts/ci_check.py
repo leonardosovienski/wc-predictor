@@ -19,6 +19,7 @@ Como hook de pre-commit (opcional), crie .git/hooks/pre-commit com:
     .venv/Scripts/python.exe scripts/ci_check.py --fast || exit 1
 """
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -133,24 +134,30 @@ def check_predict_smoke() -> None:
         warnings_.append("smoke do predict PULADO: data/matches.db ausente")
         print("      PULADO (sem banco)")
         return
+    # --json em vez de regex sobre texto formatado (Fase 2 do redesign de
+    # output): o smoke test agora le o mesmo dict estruturado que
+    # src/display.py produz, sem depender de uma substring de exibicao que
+    # pode mudar de layout a qualquer reformulacao futura do terminal.
     r = subprocess.run([sys.executable, "-X", "utf8", "-m", "src.predict",
-                        "Brazil", "France", "--neutral"],
+                        "Brazil", "France", "--neutral", "--json"],
                        cwd=ROOT, capture_output=True, text=True,
                        encoding="utf-8", errors="replace")
     out = r.stdout or ""
     if r.returncode != 0:
         failures.append(f"predict saiu com exit {r.returncode}: {(r.stderr or '')[-200:]}")
         return
-    m = re.search(r"modelo\s+1X2:.*?([\d.]+)%.*?([\d.]+)%.*?([\d.]+)%", out)
-    if not m:
-        failures.append("predict nao imprimiu a linha 'modelo 1X2' esperada")
+    try:
+        data = json.loads(out)
+        core = data["core"]
+        p_win, p_draw, p_loss = core["p_win"], core["p_draw"], core["p_loss"]
+    except (ValueError, KeyError) as e:
+        failures.append(f"predict --json nao produziu o dict esperado ({e})")
         return
-    total = sum(float(g) for g in m.groups())
+    total = (p_win + p_draw + p_loss) * 100
     if not 99.0 <= total <= 101.0:
         failures.append(f"probabilidades 1X2 somam {total:.1f}% (esperado ~100%) — "
                         f"possivel regressao do P5 (max_goals/delta_vorp)")
-    print(f"      1X2 = {m.group(1)}% / {m.group(2)}% / {m.group(3)}% "
-          f"(soma {total:.1f}%)")
+    print(f"      1X2 = {p_win:.1%} / {p_draw:.1%} / {p_loss:.1%} (soma {total:.1f}%)")
 
 
 def main() -> int:

@@ -87,7 +87,15 @@ def _market_probs(conn, name_a, name_b):
 
 
 def show(name_a, name_b, elo, params, cfg, neutral, conn=None, match_date=None,
-        level=0, as_json=False):
+        level=0, as_json=False, quiet=False, corners=False, cards=False):
+    """quiet=True computa e registra a predição (log obrigatório) sem
+    imprimir os blocos — usado por `--resumo` no modo lote, que só quer a
+    tabela final. Sempre devolve o dict de `display.compute()` pro chamador
+    montar a tabela (ou consumir como quiser).
+
+    corners/cards: injeta o bloco de eventos (SEM validação de CLV) mesmo
+    fora do --full — pede odd de decisão rápida sem forçar o operador a
+    engolir o resto do Nível 3 junto."""
     for t in (name_a, name_b):
         if t not in elo:
             sys.exit(f"time desconhecido: {t}")
@@ -117,7 +125,18 @@ def show(name_a, name_b, elo, params, cfg, neutral, conn=None, match_date=None,
 
     from . import display
     data = display.compute(name_a, name_b, elo, params, cfg, neutral, conn)
-    display.render(data, level=level, as_json=as_json)
+    if not quiet:
+        display.render(data, level=level, as_json=as_json)
+        if not as_json and conn is not None:
+            if corners:
+                ev = display.compute_event(conn, elo, name_a, name_b,
+                                           "Corner kicks", (7.5, 8.5, 9.5))
+                display.render_event("Escanteios", ev, name_a, name_b, (7.5, 8.5, 9.5))
+            if cards:
+                ev = display.compute_event(conn, elo, name_a, name_b,
+                                           "Yellow cards", (2.5, 3.5, 4.5))
+                display.render_event("Cartões amarelos", ev, name_a, name_b, (2.5, 3.5, 4.5))
+    return data
 
 
 def main():
@@ -127,6 +146,9 @@ def main():
     ap.add_argument("--fixtures", type=int, metavar="N",
                     help="prevê os próximos N fixtures da base")
     ap.add_argument("--rankings", type=int, metavar="N", help="top N do Elo")
+    ap.add_argument("--resumo", action="store_true",
+                    help="modo lote: só a tabela resumo ao final, sem os blocos por jogo "
+                        "(--fixtures continua computando e registrando cada predição)")
     verbosity = ap.add_mutually_exclusive_group()
     verbosity.add_argument("--expand", action="store_true",
                            help="nível 1: gols esperados, edge detalhado, placar top-1")
@@ -136,6 +158,10 @@ def main():
                            help="nível 3: dupla chance, draw no bet, handicap asiático")
     verbosity.add_argument("--json", action="store_true",
                            help="saída estruturada (machine-output), ignora os outros níveis")
+    ap.add_argument("--corners", action="store_true",
+                    help="injeta escanteios (SEM validação de CLV) sem precisar de --full")
+    ap.add_argument("--cards", action="store_true",
+                    help="injeta cartões (SEM validação de CLV) sem precisar de --full")
     args = ap.parse_args()
     level = 3 if args.full else 2 if args.stats else 1 if args.expand else 0
 
@@ -152,16 +178,27 @@ def main():
             """SELECT date, home_team, away_team, neutral FROM matches
                WHERE home_score IS NULL ORDER BY date LIMIT ?""",
             (args.fixtures,)).fetchall()
+        batch = []
         for date, h, a, n in rows:
-            print(f"\n[{date}]", end="")
-            show(h, a, elo, params, cfg, bool(n), conn, match_date=date,
-                level=level, as_json=args.json)
+            # o prefixo "[date]" e' so pro modo texto legivel — em --json ele
+            # vazaria uma linha solta antes de cada dict e quebraria o parse
+            # de quem consome a saida (achado rodando --fixtures --resumo --json
+            # junto: json.JSONDecodeError por causa desse texto intercalado).
+            if not args.json and not args.resumo:
+                print(f"\n[{date}]", end="")
+            data = show(h, a, elo, params, cfg, bool(n), conn, match_date=date,
+                       level=level, as_json=args.json, quiet=args.resumo and not args.json,
+                       corners=args.corners, cards=args.cards)
+            batch.append((date, data))
+        if not args.json:
+            from . import display
+            display.render_summary_table(batch)
         return
 
     if len(args.teams) != 2:
         ap.error("informe TIME_A TIME_B, ou use --fixtures/--rankings")
     show(args.teams[0], args.teams[1], elo, params, cfg, args.neutral, conn,
-        level=level, as_json=args.json)
+        level=level, as_json=args.json, corners=args.corners, cards=args.cards)
 
 
 if __name__ == "__main__":

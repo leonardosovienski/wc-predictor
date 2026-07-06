@@ -130,7 +130,65 @@ def compute(name_a, name_b, elo, params, cfg, neutral, conn=None):
         ah = mp.asian_handicap(g, line)
         out["full"]["handicap"].append({"line": line, **ah})
 
+    # divergência modelo-vs-mercado no favorito do modelo — é a régua que o
+    # README já usa pra descrever o viés de achatamento ("divergências ≥10pp
+    # não são valor"); reaproveitada aqui pro indicador de confiança.
+    fav_label, fav_prob = max((name_a, r["p_win"]), ("empate", r["p_draw"]),
+                              (name_b, r["p_loss"]), key=lambda x: x[1])
+    divergence = None
+    if mk:
+        market_prob_of_fav = {name_a: mk["p_home"], "empate": mk["p_draw"],
+                              name_b: mk["p_away"]}[fav_label]
+        divergence = fav_prob - market_prob_of_fav
+    out["core"]["favorite"] = fav_label
+    out["core"]["favorite_divergence"] = divergence
+
+    out["core"]["confidence"] = _confidence(out["core"], out["expand"], cfg)
+    out["core"]["narrative"] = _narrative(out["core"])
+
     return out
+
+
+def _confidence(core, expand, cfg):
+    """Indicador ALTA/MÉDIA/BAIXA — não é vibe, são 2 réguas que o próprio
+    projeto já validou: (a) edge no O/U 2.5 dentro da faixa historicamente
+    lucrativa (min_edge/max_edge do config, a mesma usada no backtest); (b)
+    divergência ≥10pp modelo-vs-mercado no 1X2, que o README documenta como
+    viés de achatamento estrutural — NÃO valor, mesmo quando parece um edge
+    grande. BAIXA nesse segundo caso é intencional: o modelo "mais confiante"
+    no 1X2 é historicamente o menos confiável."""
+    if not core["market"]:
+        return {"level": "BAIXA", "reason": "sem odds de mercado para cross-check"}
+
+    bt = cfg.get("backtest", {})
+    min_edge, max_edge = float(bt.get("min_edge", 0.0)), float(bt.get("max_edge", 1.0))
+
+    edge_ou = expand.get("edge_ou25")
+    if edge_ou:
+        best_lado, best_edge = max(edge_ou.items(), key=lambda kv: kv[1])
+        if min_edge < best_edge <= max_edge:
+            return {"level": "ALTA",
+                    "reason": f"edge de {best_edge:+.1%} em {best_lado} (O/U 2.5) dentro da "
+                             "faixa historicamente validada no backtest"}
+
+    div = core.get("favorite_divergence")
+    if div is not None and abs(div) >= 0.10:
+        return {"level": "BAIXA",
+                "reason": f"divergência de {div:+.1%} no 1X2 é o viés de achatamento "
+                         "conhecido (README) — não é valor"}
+
+    return {"level": "MÉDIA", "reason": "sem edge validado nem viés conhecido detectado"}
+
+
+def _narrative(core):
+    """Over/Under e BTTS vêm da MESMA grade — checa se contam a mesma
+    história. 'Over + BTTS Sim' e 'Under + BTTS Não' são o par coerente
+    (mais gols tende a vir de mais times marcando); a combinação cruzada não
+    é impossível, só menos intuitiva — vale um aviso, não um bloqueio."""
+    over_side = "Over" if core["over_25"] >= 0.5 else "Under"
+    btts_side = "Sim" if core["btts_yes"] >= 0.5 else "Não"
+    coherent = (over_side == "Over") == (btts_side == "Sim")
+    return {"over_side": over_side, "btts_side": btts_side, "coherent": coherent}
 
 
 def _fmt_pct(x):
@@ -174,6 +232,16 @@ def render(data, level=0, as_json=False):
               f"| {tb} {_fmt_pct(mk['p_away'])}")
     else:
         print("  mercado: sem odds deste confronto no banco")
+
+    conf = core["confidence"]
+    print(f"  confiança: {conf['level']} — {conf['reason']}")
+
+    nar = core["narrative"]
+    if nar["coherent"]:
+        print(f"  narrativa: -> coerente ({nar['over_side']} + BTTS {nar['btts_side']})")
+    else:
+        print(f"  narrativa: -> ATENÇÃO: mercados conflitantes "
+              f"({nar['over_side']} + BTTS {nar['btts_side']})")
 
     if level < 1:
         return
@@ -220,3 +288,95 @@ def render(data, level=0, as_json=False):
               f"| lose {_fmt_pct(h['lose'])}")
     print("  escanteios/cartões: não calculados aqui (exigem histórico de match_statistics —"
           " ver `scripts/prever.py`) [SEM VALIDAÇÃO — IC cruza zero, ver docs/HYPERPARAMETERS.md]")
+
+
+def _event_history(conn, stat_name, elo):
+    rows = conn.execute("""
+        SELECT sm.home_team, sm.away_team, h.value, a.value
+        FROM sofascore_matches sm
+        JOIN match_statistics h ON h.event_id=sm.event_id AND h.period='ALL'
+          AND h.stat_name=? AND h.team='home'
+        JOIN match_statistics a ON a.event_id=sm.event_id AND a.period='ALL'
+          AND a.stat_name=? AND a.team='away'
+        WHERE sm.home_score IS NOT NULL""", (stat_name, stat_name)).fetchall()
+    return [{"home_team": h, "away_team": aw, "home_elo": elo.get(h, 1500),
+             "away_elo": elo.get(aw, 1500), "home_event": hv, "away_event": av}
+            for h, aw, hv, av in rows]
+
+
+def _tournament_avg(conn, stat_name, competition="World Cup 2026"):
+    row = conn.execute("""
+        SELECT AVG(h.value+a.value), COUNT(*)
+        FROM sofascore_matches sm
+        JOIN match_statistics h ON h.event_id=sm.event_id AND h.period='ALL'
+          AND h.stat_name=? AND h.team='home'
+        JOIN match_statistics a ON a.event_id=sm.event_id AND a.period='ALL'
+          AND a.stat_name=? AND a.team='away'
+        WHERE sm.competition=?""", (stat_name, stat_name, competition)).fetchone()
+    return row if row and row[1] else (None, 0)
+
+
+def compute_event(conn, elo, ta, tb, stat_name, lines):
+    """Escanteios/cartões: Poisson genérico via `event_models.py`. SEM CLV
+    validado (IC cruza zero no backtest_event) — por isso fica de fora do
+    Nível 0-2 e só entra via --corners/--cards ou --full, sempre rotulado.
+    None-safe: <30 jogos de histórico devolve {'insufficient': True}."""
+    from .event_models import fit_event_model, predict_event
+    hist = _event_history(conn, stat_name, elo)
+    if len(hist) < 30:
+        return {"insufficient": True, "n": len(hist)}
+
+    params = fit_event_model(hist, stat_name, distribution="poisson")
+    lh, la, probs = predict_event(elo.get(ta, 1500), elo.get(tb, 1500), params)
+    lam = lh + la
+    out = {"insufficient": False, "n": len(hist), "b": params["b"],
+           "lh": lh, "la": la, "lam": lam,
+           "over": {ln: probs[f"over_{ln}"] for ln in lines}, "adjusted": None}
+
+    wc_avg, n_wc = _tournament_avg(conn, stat_name)
+    if wc_avg and len(hist) > n_wc:
+        from scipy.stats import poisson as _poisson
+        base_avg = sum(h["home_event"] + h["away_event"] for h in hist) / len(hist)
+        lam_adj = lam * (wc_avg / base_avg)
+        out["adjusted"] = {"wc_avg": wc_avg, "base_avg": base_avg, "lam_adj": lam_adj,
+                           "over": {ln: 1 - _poisson.cdf(ln, lam_adj) for ln in lines}}
+    return out
+
+
+def render_event(nome, data, ta, tb, lines):
+    if data["insufficient"]:
+        print(f"\n{nome}: dados insuficientes ({data['n']} jogos) [SEM VALIDAÇÃO — "
+             "ver docs/HYPERPARAMETERS.md]")
+        return
+    print(f"\n{nome} (n={data['n']} jogos, b={data['b']:+.2f}) "
+         "[SEM VALIDAÇÃO — IC cruza zero, ver docs/HYPERPARAMETERS.md]:"
+         f"  {ta} {data['lh']:.1f} + {tb} {data['la']:.1f} = {data['lam']:.1f} esperados")
+    print("  modelo:   " + " | ".join(f"Ov{ln}: {data['over'][ln]:.0%}" for ln in lines))
+    if data["adjusted"]:
+        adj = data["adjusted"]
+        print(f"  ajustado ao torneio (média Copa {adj['wc_avg']:.1f} vs base "
+             f"{adj['base_avg']:.1f} -> lambda {adj['lam_adj']:.1f}): " + " | ".join(
+             f"Ov{ln}: {adj['over'][ln]:.0%}" for ln in lines))
+
+
+def render_summary_table(batch):
+    """Tabela ASCII ao final do modo lote (`--fixtures N`) — sempre aparece,
+    com ou sem `--resumo` (--resumo só suprime os blocos individuais acima
+    dela). `batch`: lista de (date, data) onde `data` é a saída de compute()."""
+    if not batch:
+        return
+    print("\n" + "=" * 88)
+    print(f"{'data':<12}{'confronto':<26}{'favorito':<20}{'O/U 2.5':<14}{'BTTS':<8}{'conf.':<8}")
+    print("-" * 88)
+    for date, data in batch:
+        core, meta = data["core"], data["meta"]
+        ta, tb = meta["team_a"], meta["team_b"]
+        fav_label = core["favorite"]
+        fav_prob = {ta: core["p_win"], "empate": core["p_draw"], tb: core["p_loss"]}[fav_label]
+        ou_side = "Over" if core["over_25"] >= 0.5 else "Under"
+        ou_prob = core["over_25"] if ou_side == "Over" else core["under_25"]
+        btts_side = "Sim" if core["btts_yes"] >= 0.5 else "Não"
+        confronto = f"{ta} x {tb}"
+        print(f"{str(date):<12}{confronto:<26}{fav_label + ' ' + _fmt_pct(fav_prob):<20}"
+              f"{ou_side + ' ' + _fmt_pct(ou_prob):<14}{btts_side:<8}{core['confidence']['level']:<8}")
+    print("=" * 88)
