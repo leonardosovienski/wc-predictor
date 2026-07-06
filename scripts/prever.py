@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "vendor"))
 
-from src import display
+from src import display, model
 from src.ingest import load_config
 
 
@@ -67,14 +67,26 @@ def main():
     # modulo que src/predict.py usa — ver src/display.py. O que fica so
     # aqui e' o que so o prever.py tem: mata-mata, escanteios/cartoes
     # (precisam de historico via conn, que predict.py nao consulta).
+    adv = cfg["elo"]["home_advantage"] if args.mando else 0.0
     data = display.compute(ta, tb, elo, params, cfg, neutral=not args.mando, conn=conn)
+
+    # OBRIGATÓRIO: mesmo registro append-only que src/predict.py grava — sem
+    # isto os palpites deste script não entram na avaliação vs. resultado real.
+    try:
+        from src.prediction_log import log_prediction
+        r = model.predict_match(elo[ta], elo[tb], params, adv,
+                                max_goals=cfg["model"]["max_goals"])
+        log_prediction(ta, tb, not args.mando, elo[ta], elo[tb], params, r,
+                       market=data["core"]["market"])
+    except Exception as e:
+        print(f"[AVISO: predição NÃO registrada no log ({e})]", file=sys.stderr)
+
     display.render(data, level=3, as_json=args.json)
     if args.json:
         conn.close()
         return
 
     if args.ko:
-        adv = cfg["elo"]["home_advantage"] if args.mando else 0.0
         p_pen = 1.0 / (1.0 + 10 ** (-(elo[ta] + adv - elo[tb]) / 400.0))
         pa = data["core"]["p_win"] + data["core"]["p_draw"] * p_pen
         print(f"\nP(classificar): {ta} {pa:.1%} | {tb} {1 - pa:.1%}"
