@@ -109,6 +109,21 @@ def main():
                                     cur_a=cur_a, cur_b=cur_b, fraction=frac)
         if calib:
             live["meta"]["calibration"] = calib
+        # registro obrigatório também vale pra período — log separado do
+        # pré-jogo (schema próprio), senão essas apostas ficam sem aferição
+        try:
+            from src.prediction_log import log_period_prediction
+            row = conn.execute(
+                "SELECT date FROM matches WHERE home_score IS NULL AND "
+                "((home_team=? AND away_team=?) OR (home_team=? AND away_team=?)) "
+                "ORDER BY date LIMIT 1", (ta, tb, tb, ta)).fetchone()
+            log_period_prediction(ta, tb, not args.mando,
+                                  "1T" if kickoff else "2T", frac, live,
+                                  calibration=calib,
+                                  match_date=row[0] if row else None)
+        except Exception as e:
+            print(f"[AVISO: predição de período NÃO registrada no log ({e})]",
+                 file=sys.stderr)
         if args.json:
             print(_json.dumps(live, ensure_ascii=False, indent=2))
         else:

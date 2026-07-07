@@ -74,3 +74,39 @@ def test_log_respects_env_path(tmp_path, monkeypatch):
     monkeypatch.setenv("PREDICTIONS_LOG_PATH", str(p))
     log_prediction("A", "B", False, 1500, 1500, _PARAMS, _PRED)
     assert p.exists() and len(p.read_text().splitlines()) == 1
+
+
+_LIVE = {   # forma do dict de display.compute_live (period + final + meta)
+    "meta": {"team_a": "Switzerland", "team_b": "Colombia", "fraction": 0.63,
+             "current_score": (0, 0)},
+    "period": {"lambda_a": 0.80, "lambda_b": 0.78,
+               "p_a_scores_more": 0.53, "p_b_scores_more": 0.52,
+               "p_win": 0.32, "p_draw": 0.37, "p_loss": 0.31,
+               "over": {0.5: 0.77, 1.5: 0.46, 2.5: 0.22}},
+    "final": {"p_win": 0.32, "p_draw": 0.37, "p_loss": 0.31,
+              "over": {1.5: 0.46, 2.5: 0.22, 3.5: 0.08},
+              "top_scores": [((0, 0), 0.23), ((1, 0), 0.16)]},
+}
+
+
+def test_log_period_prediction_grava_schema_proprio(tmp_path):
+    from src.prediction_log import log_period_prediction
+    p = tmp_path / "period.jsonl"
+    log_period_prediction("Switzerland", "Colombia", True, "2T", 0.629, _LIVE,
+                          calibration={"frac1": 0.3707, "n": 122},
+                          match_date="2026-07-06", path=p)
+    rec = json.loads(p.read_text(encoding="utf-8").splitlines()[0])
+    assert rec["kind"] == "period" and rec["period"] == "2T"
+    assert rec["current_score"] == [0, 0]
+    assert rec["fraction"] == 0.629
+    assert rec["calibration"] == {"frac1": 0.3707, "n": 122}
+    assert rec["period_pred"]["over"]["2.5"] == 0.22
+    assert rec["final_pred"]["top_scores"][0] == [[0, 0], 0.23]
+
+
+def test_log_period_respects_env_path(tmp_path, monkeypatch):
+    from src.prediction_log import log_period_prediction
+    p = tmp_path / "sub" / "periods.jsonl"
+    monkeypatch.setenv("PERIOD_LOG_PATH", str(p))
+    log_period_prediction("A", "B", True, "1T", 0.371, _LIVE)
+    assert p.exists() and len(p.read_text().splitlines()) == 1

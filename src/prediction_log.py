@@ -14,12 +14,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ENV_PATH = "PREDICTIONS_LOG_PATH"
+ENV_PERIOD_PATH = "PERIOD_LOG_PATH"
 ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT = ROOT / "data" / "predictions.jsonl"
+_PERIOD_DEFAULT = ROOT / "data" / "period_predictions.jsonl"
 
 
 def _resolve(path=None) -> Path:
     return Path(path or os.environ.get(ENV_PATH) or _DEFAULT)
+
+
+def _resolve_period(path=None) -> Path:
+    return Path(path or os.environ.get(ENV_PERIOD_PATH) or _PERIOD_DEFAULT)
 
 
 def log_prediction(home, away, neutral, elo_home, elo_away, params, pred,
@@ -71,6 +77,46 @@ def log_prediction(home, away, neutral, elo_home, elo_away, params, pred,
                 "edge_under_vs_price": round((1.0 - p_over) - (1.0 / market["odds_under"]), 4),
             })
     dest = _resolve(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return record
+
+
+def log_period_prediction(home, away, neutral, period, fraction, live,
+                          calibration=None, match_date=None, path=None,
+                          logged_at=None) -> dict:
+    """Congela uma predição de PERÍODO (1º ou 2º tempo) — arquivo separado
+    (data/period_predictions.jsonl) de propósito: o schema do log pré-jogo
+    assume previsão do jogo inteiro feita ANTES do apito; uma projeção
+    condicional a placar de intervalo não cabe nele sem ambiguidade.
+    `live` é o dict de display.compute_live; `period` é '1T' ou '2T';
+    `calibration` é o dict de display.ht_goal_fraction (ou None = 0.5 cru)."""
+    per, fin, meta = live["period"], live["final"], live["meta"]
+    record = {
+        "logged_at": logged_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "kind": "period", "period": period,
+        "match_date": match_date,
+        "home": home, "away": away, "neutral": bool(neutral),
+        "current_score": list(meta["current_score"]),
+        "fraction": round(float(fraction), 4),
+        "calibration": None if calibration is None else
+            {"frac1": round(calibration["frac1"], 4), "n": calibration["n"]},
+        "period_pred": {
+            "lambda_home": round(per["lambda_a"], 4), "lambda_away": round(per["lambda_b"], 4),
+            "p_home": round(per["p_win"], 4), "p_draw": round(per["p_draw"], 4),
+            "p_away": round(per["p_loss"], 4),
+            "over": {str(k): round(v, 4) for k, v in per["over"].items()},
+        },
+        "final_pred": {
+            "p_home": round(fin["p_win"], 4), "p_draw": round(fin["p_draw"], 4),
+            "p_away": round(fin["p_loss"], 4),
+            "over": {str(k): round(v, 4) for k, v in fin["over"].items()},
+            "top_scores": [[[int(sc[0]), int(sc[1])], round(p, 4)]
+                           for sc, p in fin["top_scores"]],
+        },
+    }
+    dest = _resolve_period(path)
     dest.parent.mkdir(parents=True, exist_ok=True)
     with open(dest, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")

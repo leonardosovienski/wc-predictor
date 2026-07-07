@@ -40,6 +40,7 @@ def _smoke_env() -> dict:
     o log é a janela out-of-sample da Copa, poluí-lo distorce a avaliação)."""
     env = dict(os.environ)
     env["PREDICTIONS_LOG_PATH"] = str(Path(tempfile.gettempdir()) / "ci_smoke_predictions.jsonl")
+    env["PERIOD_LOG_PATH"] = str(Path(tempfile.gettempdir()) / "ci_smoke_periods.jsonl")
     return env
 
 # Modulos de PESQUISA: banco estritamente somente-leitura (P12).
