@@ -100,12 +100,19 @@ def main():
             print(f"[AVISO: --mata-mata ignorada no modo {flag} — "
                  "P(classificar) nao se aplica a uma projecao parcial de jogo]",
                  file=sys.stderr)
+        # fração do período calibrada com o placar de intervalo ingerido (37%
+        # dos gols saem no 1o tempo, medido em n>=50 jogos) — fallback 0.5
+        # ingênuo quando a base ainda não tem dado suficiente
+        calib = display.ht_goal_fraction(conn)
+        frac = (calib["frac1"] if kickoff else 1.0 - calib["frac1"]) if calib else 0.5
         live = display.compute_live(ta, tb, elo, params, cfg, neutral=not args.mando,
-                                    cur_a=cur_a, cur_b=cur_b)
+                                    cur_a=cur_a, cur_b=cur_b, fraction=frac)
+        if calib:
+            live["meta"]["calibration"] = calib
         if args.json:
             print(_json.dumps(live, ensure_ascii=False, indent=2))
         else:
-            display.render_live(live, kickoff=kickoff)
+            display.render_live(live, kickoff=kickoff, calib=calib)
         conn.close()
         return
 

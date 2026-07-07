@@ -85,6 +85,19 @@ def test_snapshots_acumulam_no_tempo(conn):
     assert n == 2
 
 
+def test_ht_goal_fraction_calibra_e_respeita_minimo(conn):
+    # fração empírica dos gols do 1o tempo — lida do banco, nunca hardcoded.
+    # Abaixo de min_games devolve None (chamador cai no 0.5 ingênuo).
+    from src.display import ht_goal_fraction
+    for i in range(60):
+        db.upsert_ss_matches(conn, [_row(1000 + i, home_score=2, away_score=1)])
+        db.update_ht_scores(conn, 1000 + i, 1, 0)   # 1 de 3 gols no 1o tempo
+    assert ht_goal_fraction(conn, min_games=100) is None      # amostra curta
+    out = ht_goal_fraction(conn, min_games=50)
+    assert out["n"] == 60
+    assert abs(out["frac1"] - 1 / 3) < 1e-9
+
+
 def test_update_ht_scores_grava_e_none_e_noop(conn):
     # migração criou as colunas home_score_ht/away_score_ht (INTEGER) e o
     # UPDATE separado grava sem mexer na tupla de 20 campos do upsert.

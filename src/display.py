@@ -359,6 +359,29 @@ def render_event(nome, data, ta, tb, lines):
              f"Ov{ln}: {adj['over'][ln]:.0%}" for ln in lines))
 
 
+def ht_goal_fraction(conn, min_games=50):
+    """Fração empírica dos gols que saem no 1o TEMPO, medida nos jogos com
+    placar de intervalo ingerido (sofascore_matches.home_score_ht). Lida do
+    banco em runtime — nunca hardcoded, mesma filosofia do bootstrap_cache
+    (o CLV fixado em código já divergiu do real uma vez; não repetir).
+    None se não há dado suficiente (< min_games) — o chamador cai no 0.5
+    ingênuo e a saída avisa que está sem calibração."""
+    if conn is None:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT SUM(home_score_ht + away_score_ht), "
+            "SUM(home_score + away_score), COUNT(*) "
+            "FROM sofascore_matches WHERE home_score_ht IS NOT NULL "
+            "AND home_score IS NOT NULL").fetchone()
+    except Exception:                      # coluna ainda não migrada
+        return None
+    g1, gt, n = row or (None, None, 0)
+    if not gt or n < min_games:
+        return None
+    return {"frac1": g1 / gt, "n": n}
+
+
 def compute_live(name_a, name_b, elo, params, cfg, neutral, cur_a, cur_b, fraction=0.5,
                  period_lines=(0.5, 1.5, 2.5), final_lines=(1.5, 2.5, 3.5)):
     """Projeção de UM PERÍODO do jogo (fraction=0.5 escala os λ pré-jogo pela
@@ -413,16 +436,22 @@ def compute_live(name_a, name_b, elo, params, cfg, neutral, cur_a, cur_b, fracti
     }
 
 
-def render_live(data, kickoff=False):
+def render_live(data, kickoff=False, calib=None):
     """kickoff=True: projeção do 1o tempo pré-jogo (cur_a/cur_b=0-0) — rótulos
     falam de "1o tempo", não de "placar atual"/"resto do jogo". kickoff=False
-    (padrão): 2o tempo ao vivo, condicionado ao placar real do intervalo."""
+    (padrão): 2o tempo ao vivo, condicionado ao placar real do intervalo.
+    calib: dict de ht_goal_fraction() quando a fração veio de dado real."""
     m, per, fin = data["meta"], data["period"], data["final"]
     ta, tb = m["team_a"], m["team_b"]
     ca, cb = m["current_score"]
     periodo = "1º tempo" if kickoff else "2º tempo"
-    print(f"\n[SEM VALIDAÇÃO — projeção de {periodo} assume taxa de gol constante "
-         "nos 90min, não calibrada com dado de minuto real; ver docs/HYPERPARAMETERS.md]")
+    if calib:
+        print(f"\n[SEM CLV — taxa de gol do período calibrada com dado real "
+             f"(1º tempo = {calib['frac1']:.0%} dos gols, n={calib['n']} jogos), "
+             "mas nenhum mercado de tempo tem CLV medido no backtest]")
+    else:
+        print(f"\n[SEM VALIDAÇÃO — projeção de {periodo} assume taxa de gol constante "
+             "nos 90min, não calibrada com dado de minuto real; ver docs/HYPERPARAMETERS.md]")
     if kickoff:
         print(f"Projeção do {periodo}: {ta} x {tb} (pré-jogo)")
     else:
