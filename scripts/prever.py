@@ -75,6 +75,17 @@ def main():
             cur_a, cur_b = (int(x) for x in args.segundo_tempo.split("-", 1))
         except ValueError:
             sys.exit("--segundo-tempo espera 'H-A', ex: --segundo-tempo 0-2")
+        # --segundo-tempo troca o fluxo pre-jogo inteiro (retorna antes do bloco
+        # de --mata-mata e dos blocos de escanteios/cartoes abaixo) — sem este
+        # aviso, --mata-mata e' aceita pelo argparse e descartada em silencio
+        # (achado na auditoria 2026-07-07: nenhum erro, nenhum aviso, resultado
+        # igual com ou sem a flag). Escanteios/cartoes nao tem flag propria
+        # neste script (sempre aparecem no fluxo pre-jogo) — por isso nao
+        # entram nesta checagem, so ficam de fora do modo live mesmo.
+        if args.ko:
+            print("[AVISO: --mata-mata ignorada no modo --segundo-tempo — "
+                 "P(classificar) nao se aplica a um jogo ja em andamento]",
+                 file=sys.stderr)
         live = display.compute_live(ta, tb, elo, params, cfg, neutral=not args.mando,
                                     cur_a=cur_a, cur_b=cur_b)
         if args.json:

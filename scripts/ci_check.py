@@ -9,6 +9,9 @@ Roda as barreiras que impedem a reintroducao dos bugs corrigidos:
      ver docs/V3_READINESS.md) geram WARN, nao FAIL — mas nenhuma NOVA entra.
   4. Smoke test do predict — o caminho de serving produz um 1X2 que soma ~100%.
      (pulado com aviso se data/matches.db nao existir — ex.: checkout limpo)
+  5. Smoke test do live prediction (--segundo-tempo) — mesmo caminho de codigo
+     que o item 4 nao exercita (auditoria 2026-07-07: era o unico fluxo de
+     previsao do sistema sem cobertura de CI).
 
 Uso:
     python scripts/ci_check.py            # tudo
@@ -64,7 +67,7 @@ def _rel(p: Path) -> str:
 
 
 def check_pytest() -> None:
-    print("[1/4] pytest (suite completa)...")
+    print("[1/5] pytest (suite completa)...")
     r = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-q"],
                        cwd=ROOT, capture_output=True, text=True)
     tail = (r.stdout or "").strip().splitlines()[-1:] or ["(sem saida)"]
@@ -74,7 +77,7 @@ def check_pytest() -> None:
 
 
 def check_research_readonly() -> None:
-    print("[2/4] pesquisa somente-leitura (P12)...")
+    print("[2/5] pesquisa somente-leitura (P12)...")
     # janela de 200 chars apos cada chamada: argumentos podem conter parenteses
     # aninhados (str(db_path)), entao regex ate o 1o ')' nao serve
     for rel in RESEARCH_DB_FILES:
@@ -98,7 +101,7 @@ def check_research_readonly() -> None:
 
 
 def check_current_elo_containment() -> None:
-    print("[3/4] current_elo/load_elo contido no serving (P3)...")
+    print("[3/5] current_elo/load_elo contido no serving (P3)...")
     # USO real, nao mencao em prosa: chamada db.load_elo(...) ou SQL que toca a
     # tabela current_elo. Docstrings dos fixes citam 'current_elo' como
     # historico — isso nao pode disparar o alarme.
@@ -129,7 +132,7 @@ def check_current_elo_containment() -> None:
 
 
 def check_predict_smoke() -> None:
-    print("[4/4] smoke test do predict...")
+    print("[4/5] smoke test do predict...")
     if not (ROOT / "data" / "matches.db").exists():
         warnings_.append("smoke do predict PULADO: data/matches.db ausente")
         print("      PULADO (sem banco)")
@@ -160,6 +163,36 @@ def check_predict_smoke() -> None:
     print(f"      1X2 = {p_win:.1%} / {p_draw:.1%} / {p_loss:.1%} (soma {total:.1f}%)")
 
 
+def check_live_smoke() -> None:
+    print("[5/5] smoke test do live prediction (--segundo-tempo)...")
+    if not (ROOT / "data" / "matches.db").exists():
+        warnings_.append("smoke do live prediction PULADO: data/matches.db ausente")
+        print("      PULADO (sem banco)")
+        return
+    r = subprocess.run([sys.executable, "-X", "utf8", "scripts/prever.py",
+                        "Brazil", "France", "--segundo-tempo", "0-0", "--json"],
+                       cwd=ROOT, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    out = r.stdout or ""
+    if r.returncode != 0:
+        failures.append(f"prever.py --segundo-tempo saiu com exit {r.returncode}: "
+                        f"{(r.stderr or '')[-200:]}")
+        return
+    try:
+        data = json.loads(out)
+        fin = data["final"]
+        p_win, p_draw, p_loss = fin["p_win"], fin["p_draw"], fin["p_loss"]
+    except (ValueError, KeyError) as e:
+        failures.append(f"prever.py --segundo-tempo --json nao produziu o dict "
+                        f"esperado ({e}) — schema de compute_live() mudou?")
+        return
+    total = (p_win + p_draw + p_loss) * 100
+    if not 99.0 <= total <= 101.0:
+        failures.append(f"live prediction: p_win+p_draw+p_loss = {total:.1f}% "
+                        f"(esperado ~100%) — possivel regressao do compute_live")
+    print(f"      final = {p_win:.1%} / {p_draw:.1%} / {p_loss:.1%} (soma {total:.1f}%)")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--fast", action="store_true", help="pula o pytest")
@@ -168,10 +201,11 @@ def main() -> int:
     if not args.fast:
         check_pytest()
     else:
-        print("[1/4] pytest PULADO (--fast)")
+        print("[1/5] pytest PULADO (--fast)")
     check_research_readonly()
     check_current_elo_containment()
     check_predict_smoke()
+    check_live_smoke()
 
     print()
     for w in warnings_:
