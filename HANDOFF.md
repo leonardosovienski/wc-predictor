@@ -1,3 +1,22 @@
+> ## 🔗 ONDA 5 (2026-07-03) — reintegração ao predictor_core (DESPARKADO)
+>
+> O wc-predictor-v2 agora **consome o predictor_core via vendor** (`vendor/predictor_core/`,
+> 32 arquivos; `tests/test_core_integrity.py` protege contra drift). Foi desparkado porque a
+> **coleta** (`ingest`→`matches.db`) é independente da **análise**: criar o vendor é aditivo
+> e não toca o SQLite congelado nem o config pré-registrado.
+>
+> **Removidos** (scratch mortos, importados por nada — NÃO eram duplicatas do core):
+> `stats.py`, `stats_corrigido.py`, `stats_final.py` (diagnósticos one-off de chutes/cartões).
+>
+> **NÃO migrados de propósito** (honestidade de engenharia): `src/bootstrap.py` (CLI numpy
+> nos comandos do playbook pré-registrado; RNG numpy ≠ stdlib do core → golden bit-a-bit
+> impossível, mudaria o IC de CLV pré-registrado mid-torneio) e `src/research/score_metrics.py`
+> (métricas de tensores de placar N×G×G, ontologia de futebol, usado por `survival_test.py`).
+> Ambos **congelados até o post-mortem** (mandato do `docs/COPA_2026_PLAYBOOK.md`), a
+> reconciliar então com o core por validação de TOLERÂNCIA (não bit-a-bit — a RNG difere).
+>
+> Suíte: **177 verdes** (173 + 4 de integridade). `sync_core --check`: 3/3 OK, sem PARKED.
+
 Estrutura
 text
 config.yaml
