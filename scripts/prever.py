@@ -5,6 +5,9 @@ Uso:
     python scripts/prever.py Brazil France --mando      # com vantagem de mando p/ o 1o time
     python scripts/prever.py Spain Austria --mata-mata  # inclui P(classificar)
     python scripts/prever.py Spain Austria --json       # machine-output
+    python scripts/prever.py Argentina Egypt --segundo-tempo 0-2
+        # projecao do 2o tempo dado o placar do intervalo (SEM CLV validado —
+        # nao existe mercado ao vivo no backtest; ver docs/HYPERPARAMETERS.md)
 
 Entrega o pacote completo (Nivel 3 / --full de src/display.py) mais dois
 extras exclusivos deste script: P(classificar) em mata-mata e escanteios/
@@ -17,6 +20,7 @@ Read-only no banco. CLV histórico exibido vem do cache gravado por
 `python -m src.bootstrap` (não é mais hardcoded no código-fonte).
 """
 import argparse
+import json as _json
 import sqlite3
 import sys
 from pathlib import Path
@@ -45,6 +49,9 @@ def main():
                     help="inclui P(classificar) — empate resolvido por Elo")
     ap.add_argument("--json", action="store_true",
                     help="saida estruturada (machine-output)")
+    ap.add_argument("--segundo-tempo", metavar="H-A", dest="segundo_tempo",
+                    help="placar do intervalo (gols de time_a-time_b) — projeta o "
+                         "2o tempo em vez da previsao pre-jogo [SEM CLV validado]")
     args = ap.parse_args()
 
     cfg = load_config()
@@ -62,6 +69,20 @@ def main():
             sugest = [k for k in elo if t.lower() in k.lower()]
             sys.exit(f"time desconhecido: {t}" +
                      (f" — voce quis dizer {sugest}?" if sugest else ""))
+
+    if args.segundo_tempo:
+        try:
+            cur_a, cur_b = (int(x) for x in args.segundo_tempo.split("-", 1))
+        except ValueError:
+            sys.exit("--segundo-tempo espera 'H-A', ex: --segundo-tempo 0-2")
+        live = display.compute_live(ta, tb, elo, params, cfg, neutral=not args.mando,
+                                    cur_a=cur_a, cur_b=cur_b)
+        if args.json:
+            print(_json.dumps(live, ensure_ascii=False, indent=2))
+        else:
+            display.render_live(live)
+        conn.close()
+        return
 
     # todo o calculo + as 4 camadas de exibicao (Nivel 0..3) vem do mesmo
     # modulo que src/predict.py usa — ver src/display.py. O que fica so

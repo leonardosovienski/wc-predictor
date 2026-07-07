@@ -359,6 +359,65 @@ def render_event(nome, data, ta, tb, lines):
              f"Ov{ln}: {adj['over'][ln]:.0%}" for ln in lines))
 
 
+def compute_live(name_a, name_b, elo, params, cfg, neutral, cur_a, cur_b, fraction=0.5):
+    """Projeção do RESTO do jogo a partir do placar atual — 2 metades (fraction=0.5
+    escala os λ pré-jogo pela metade, hipótese de taxa de gol constante). SEM CLV
+    validado (não existe mercado ao vivo no backtest) — sempre rotulado assim em
+    `render_live`. `cur_a`/`cur_b` são os gols já feitos por name_a/name_b."""
+    import numpy as np
+
+    from . import model
+
+    adv = 0.0 if neutral else cfg["elo"]["home_advantage"]
+    rem = model.predict_remaining(elo[name_a], elo[name_b], params, adv,
+                                  fraction=fraction, max_goals=cfg["model"]["max_goals"])
+    g = rem["grid"]
+    idx = np.arange(g.shape[0])
+    i_idx, j_idx = idx.reshape(-1, 1), idx.reshape(1, -1)
+    final_a, final_b = cur_a + i_idx, cur_b + j_idx
+
+    p_a_more = 1.0 - float(g[0, :].sum())   # P(name_a marca >=1 no resto)
+    p_b_more = 1.0 - float(g[:, 0].sum())
+
+    totals_final = final_a + final_b
+    flat = [((int(cur_a + i), int(cur_b + j)), float(g[i, j])) for i in idx for j in idx]
+    top_final = sorted(flat, key=lambda t: -t[1])[:5]
+
+    return {
+        "meta": {"team_a": name_a, "team_b": name_b, "fraction": fraction,
+                 "current_score": (cur_a, cur_b)},
+        "remaining": {"lambda_a": rem["lambda_a"], "lambda_b": rem["lambda_b"],
+                     "p_a_scores_more": p_a_more, "p_b_scores_more": p_b_more},
+        "final": {
+            "p_win": float(g[final_a > final_b].sum()),
+            "p_draw": float(g[final_a == final_b].sum()),
+            "p_loss": float(g[final_a < final_b].sum()),
+            "over": {t: float(g[totals_final > t].sum()) for t in (1.5, 2.5, 3.5)},
+            "top_scores": top_final,
+        },
+    }
+
+
+def render_live(data):
+    m, rem, fin = data["meta"], data["remaining"], data["final"]
+    ta, tb = m["team_a"], m["team_b"]
+    ca, cb = m["current_score"]
+    print(f"\n[SEM VALIDAÇÃO — projeção de resto de jogo assume taxa de gol constante "
+         "nos 90min, não calibrada com dado de minuto real; ver docs/HYPERPARAMETERS.md]")
+    print(f"Placar atual: {ta} {ca} x {cb} {tb}  "
+         f"(projeção pros {m['fraction']:.0%} restantes do jogo)")
+    print(f"  gols esperados no resto: {ta} {rem['lambda_a']:.2f} + {tb} {rem['lambda_b']:.2f}")
+    print(f"  {ta} marca mais >=1: {_fmt_pct(rem['p_a_scores_more'])} | "
+         f"{tb} marca mais >=1: {_fmt_pct(rem['p_b_scores_more'])}")
+    print(f"\nPlacar final projetado (atual + resto):")
+    print(f"  {ta} vence: {_fmt_pct(fin['p_win'])} | empate: {_fmt_pct(fin['p_draw'])} "
+         f"| {tb} vence: {_fmt_pct(fin['p_loss'])}")
+    print("  Over/Under 2.5 (jogo completo): over " + _fmt_pct(fin["over"][2.5]) +
+         " | under " + _fmt_pct(1.0 - fin["over"][2.5]))
+    print("  placares finais mais prováveis: " +
+         ", ".join(f"{h}x{a} ({_fmt_pct(p)})" for (h, a), p in fin["top_scores"]))
+
+
 def render_summary_table(batch):
     """Tabela ASCII ao final do modo lote (`--fixtures N`) — sempre aparece,
     com ou sem `--resumo` (--resumo só suprime os blocos individuais acima

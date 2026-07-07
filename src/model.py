@@ -160,20 +160,35 @@ def predict_match(elo_a: float, elo_b: float, params: Params,
     lam_a = math.exp(a + b * diff + theta * (delta_vorp_a + delta_xg))
     lam_b = math.exp(a - b * diff + theta * (delta_vorp_b - delta_xg))
 
+    grid = _score_grid(lam_a, lam_b, alpha, rho, max_goals)
+    return {"lambda_a": lam_a, "lambda_b": lam_b, "total_goals": lam_a + lam_b,
+            **_grid_stats(grid, max_goals)}
+
+
+def _score_grid(lam_a, lam_b, alpha, rho, max_goals):
+    """Grid de probabilidade P(gols_a=i, gols_b=j) — NB + correção Dixon-Coles
+    nas quatro células de placar baixo. Fatorado de `predict_match` pra ser
+    reaproveitado por `predict_remaining` com lambdas escalados."""
     k = np.arange(max_goals + 1)
     r = 1.0 / max(alpha, 1e-9)
     pa = nbinom.pmf(k, r, r / (r + lam_a))
     pb = nbinom.pmf(k, r, r / (r + lam_b))
     grid = np.outer(pa, pb)
 
-    # correção Dixon-Coles nas quatro células de canto
     grid[0, 0] *= 1.0 - lam_a * lam_b * rho
     grid[0, 1] *= 1.0 + lam_a * rho
     grid[1, 0] *= 1.0 + lam_b * rho
     grid[1, 1] *= 1.0 - rho
     grid = np.clip(grid, 0.0, None)
     grid /= grid.sum()
+    return grid
 
+
+def _grid_stats(grid, max_goals):
+    """p_win/draw/loss, over/btts e top-5 placares a partir de um grid já
+    pronto — mesma leitura pra `predict_match` (placar final) e
+    `predict_remaining` (gols do tempo restante, não placar final)."""
+    k = np.arange(max_goals + 1)
     p_win = float(np.tril(grid, -1).sum())
     p_draw = float(np.trace(grid))
     p_loss = float(np.triu(grid, 1).sum())
@@ -188,8 +203,33 @@ def predict_match(elo_a: float, elo_b: float, params: Params,
     top = sorted(flat, key=lambda t: -t[1])[:5]
 
     return {
-        "lambda_a": lam_a, "lambda_b": lam_b, "total_goals": lam_a + lam_b,
         "p_win": p_win, "p_draw": p_draw, "p_loss": p_loss,
         "over": over, "btts": btts, "top_scores": top,
         "grid": grid,   # exposto para o simulador amostrar placares
     }
+
+
+def predict_remaining(elo_a: float, elo_b: float, params: Params,
+                      home_adv: float = 0.0, fraction: float = 0.5,
+                      max_goals: int = 12) -> dict:
+    """Distribuição de gols só do tempo RESTANTE de um jogo em andamento —
+    mesma link function do `predict_match`, com os λ pré-jogo escalados por
+    `fraction` (0.5 = um tempo inteiro de 45min).
+
+    HIPÓTESE NÃO CALIBRADA: assume taxa de gol constante ao longo dos 90min
+    (mesma simplificação que Dixon-Coles original usa). Sem dado de minuto
+    de gol no projeto, não dá pra checar se o 2o tempo tem taxa maior — na
+    prática, times cansam e fazem mais gol depois dos 60min, então isto
+    provavelmente subestima o tempo restante. Sem CLV validado (não existe
+    mercado ao vivo no backtest) — ver docs/HYPERPARAMETERS.md.
+
+    Os p_win/p_draw/p_loss e top_scores devolvidos são do TEMPO RESTANTE,
+    não do placar final — some ao placar atual pra projetar o jogo inteiro."""
+    a, b, alpha, rho, _theta = _unpack_params(params)
+    diff = (elo_a + home_adv - elo_b) / 400.0
+    lam_a = math.exp(a + b * diff) * fraction
+    lam_b = math.exp(a - b * diff) * fraction
+
+    grid = _score_grid(lam_a, lam_b, alpha, rho, max_goals)
+    return {"lambda_a": lam_a, "lambda_b": lam_b, "total_goals": lam_a + lam_b,
+            **_grid_stats(grid, max_goals)}
