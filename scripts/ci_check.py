@@ -163,34 +163,43 @@ def check_predict_smoke() -> None:
     print(f"      1X2 = {p_win:.1%} / {p_draw:.1%} / {p_loss:.1%} (soma {total:.1f}%)")
 
 
-def check_live_smoke() -> None:
-    print("[5/5] smoke test do live prediction (--segundo-tempo)...")
-    if not (ROOT / "data" / "matches.db").exists():
-        warnings_.append("smoke do live prediction PULADO: data/matches.db ausente")
-        print("      PULADO (sem banco)")
-        return
+def _check_live_flag(flag: str, extra_args: list[str], result_key: str) -> None:
+    """Roda `prever.py <flag> --json` e valida que p_win+p_draw+p_loss de
+    `result_key` (p.ex. 'final' pro --segundo-tempo, 'period' pro
+    --primeiro-tempo) soma ~100%."""
     r = subprocess.run([sys.executable, "-X", "utf8", "scripts/prever.py",
-                        "Brazil", "France", "--segundo-tempo", "0-0", "--json"],
+                        "Brazil", "France", *extra_args, "--json"],
                        cwd=ROOT, capture_output=True, text=True,
                        encoding="utf-8", errors="replace")
     out = r.stdout or ""
     if r.returncode != 0:
-        failures.append(f"prever.py --segundo-tempo saiu com exit {r.returncode}: "
+        failures.append(f"prever.py {flag} saiu com exit {r.returncode}: "
                         f"{(r.stderr or '')[-200:]}")
         return
     try:
         data = json.loads(out)
-        fin = data["final"]
-        p_win, p_draw, p_loss = fin["p_win"], fin["p_draw"], fin["p_loss"]
+        block = data[result_key]
+        p_win, p_draw, p_loss = block["p_win"], block["p_draw"], block["p_loss"]
     except (ValueError, KeyError) as e:
-        failures.append(f"prever.py --segundo-tempo --json nao produziu o dict "
-                        f"esperado ({e}) — schema de compute_live() mudou?")
+        failures.append(f"prever.py {flag} --json nao produziu o dict esperado "
+                        f"({e}) — schema de compute_live() mudou?")
         return
     total = (p_win + p_draw + p_loss) * 100
     if not 99.0 <= total <= 101.0:
-        failures.append(f"live prediction: p_win+p_draw+p_loss = {total:.1f}% "
+        failures.append(f"{flag}: p_win+p_draw+p_loss ({result_key}) = {total:.1f}% "
                         f"(esperado ~100%) — possivel regressao do compute_live")
-    print(f"      final = {p_win:.1%} / {p_draw:.1%} / {p_loss:.1%} (soma {total:.1f}%)")
+    print(f"      {flag} ({result_key}) = {p_win:.1%} / {p_draw:.1%} / {p_loss:.1%} "
+         f"(soma {total:.1f}%)")
+
+
+def check_live_smoke() -> None:
+    print("[5/5] smoke test do live prediction (--segundo-tempo / --primeiro-tempo)...")
+    if not (ROOT / "data" / "matches.db").exists():
+        warnings_.append("smoke do live prediction PULADO: data/matches.db ausente")
+        print("      PULADO (sem banco)")
+        return
+    _check_live_flag("--segundo-tempo", ["--segundo-tempo", "0-0"], "final")
+    _check_live_flag("--primeiro-tempo", ["--primeiro-tempo"], "period")
 
 
 def main() -> int:

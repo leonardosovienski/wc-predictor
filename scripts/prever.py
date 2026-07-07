@@ -5,6 +5,8 @@ Uso:
     python scripts/prever.py Brazil France --mando      # com vantagem de mando p/ o 1o time
     python scripts/prever.py Spain Austria --mata-mata  # inclui P(classificar)
     python scripts/prever.py Spain Austria --json       # machine-output
+    python scripts/prever.py Argentina Egypt --primeiro-tempo
+        # projecao do 1o tempo pre-jogo (SEM CLV validado)
     python scripts/prever.py Argentina Egypt --segundo-tempo 0-2
         # projecao do 2o tempo dado o placar do intervalo (SEM CLV validado —
         # nao existe mercado ao vivo no backtest; ver docs/HYPERPARAMETERS.md)
@@ -52,7 +54,13 @@ def main():
     ap.add_argument("--segundo-tempo", metavar="H-A", dest="segundo_tempo",
                     help="placar do intervalo (gols de time_a-time_b) — projeta o "
                          "2o tempo em vez da previsao pre-jogo [SEM CLV validado]")
+    ap.add_argument("--primeiro-tempo", action="store_true", dest="primeiro_tempo",
+                    help="projeta so o 1o tempo (pre-jogo) em vez da previsao de "
+                         "jogo inteiro [SEM CLV validado]")
     args = ap.parse_args()
+
+    if args.segundo_tempo and args.primeiro_tempo:
+        sys.exit("--primeiro-tempo e --segundo-tempo sao mutuamente exclusivos")
 
     cfg = load_config()
     conn = _conn_ro()
@@ -70,28 +78,34 @@ def main():
             sys.exit(f"time desconhecido: {t}" +
                      (f" — voce quis dizer {sugest}?" if sugest else ""))
 
-    if args.segundo_tempo:
-        try:
-            cur_a, cur_b = (int(x) for x in args.segundo_tempo.split("-", 1))
-        except ValueError:
-            sys.exit("--segundo-tempo espera 'H-A', ex: --segundo-tempo 0-2")
-        # --segundo-tempo troca o fluxo pre-jogo inteiro (retorna antes do bloco
-        # de --mata-mata e dos blocos de escanteios/cartoes abaixo) — sem este
-        # aviso, --mata-mata e' aceita pelo argparse e descartada em silencio
-        # (achado na auditoria 2026-07-07: nenhum erro, nenhum aviso, resultado
-        # igual com ou sem a flag). Escanteios/cartoes nao tem flag propria
-        # neste script (sempre aparecem no fluxo pre-jogo) — por isso nao
-        # entram nesta checagem, so ficam de fora do modo live mesmo.
+    if args.segundo_tempo or args.primeiro_tempo:
+        kickoff = bool(args.primeiro_tempo)
+        if kickoff:
+            cur_a, cur_b = 0, 0
+        else:
+            try:
+                cur_a, cur_b = (int(x) for x in args.segundo_tempo.split("-", 1))
+            except ValueError:
+                sys.exit("--segundo-tempo espera 'H-A', ex: --segundo-tempo 0-2")
+        # --primeiro-tempo/--segundo-tempo trocam o fluxo pre-jogo inteiro
+        # (retornam antes do bloco de --mata-mata e dos blocos de
+        # escanteios/cartoes abaixo) — sem este aviso, --mata-mata e' aceita
+        # pelo argparse e descartada em silencio (achado na auditoria
+        # 2026-07-07: nenhum erro, nenhum aviso, resultado igual com ou sem a
+        # flag). Escanteios/cartoes nao tem flag propria neste script (sempre
+        # aparecem no fluxo pre-jogo) — por isso nao entram nesta checagem, so
+        # ficam de fora do modo live/1o-tempo mesmo.
         if args.ko:
-            print("[AVISO: --mata-mata ignorada no modo --segundo-tempo — "
-                 "P(classificar) nao se aplica a um jogo ja em andamento]",
+            flag = "--primeiro-tempo" if kickoff else "--segundo-tempo"
+            print(f"[AVISO: --mata-mata ignorada no modo {flag} — "
+                 "P(classificar) nao se aplica a uma projecao parcial de jogo]",
                  file=sys.stderr)
         live = display.compute_live(ta, tb, elo, params, cfg, neutral=not args.mando,
                                     cur_a=cur_a, cur_b=cur_b)
         if args.json:
             print(_json.dumps(live, ensure_ascii=False, indent=2))
         else:
-            display.render_live(live)
+            display.render_live(live, kickoff=kickoff)
         conn.close()
         return
 
