@@ -83,6 +83,10 @@ def parse_match(ev: dict):
         "away_team": ev.get("awayTeam", {}).get("name"),
         "home_score": ev.get("homeScore", {}).get("current") if finished else None,
         "away_score": ev.get("awayScore", {}).get("current") if finished else None,
+        # period1 = placar do intervalo; presente no MESMO payload de events que
+        # já baixamos — dado que ficou anos no cache sem ser ingerido
+        "home_score_ht": ev.get("homeScore", {}).get("period1") if finished else None,
+        "away_score_ht": ev.get("awayScore", {}).get("period1") if finished else None,
     }
 
 
@@ -395,6 +399,7 @@ def run(seasons_for: int | None = None) -> None:
                 db.upsert_ss_matches(conn, [(eid, name, season, m["date"],
                     m["home_team"], m["away_team"], m["home_score"], m["away_score"],
                     hxg, axg, oh, od, oa, o_over, o_under, *opens)])
+                db.update_ht_scores(conn, eid, m["home_score_ht"], m["away_score_ht"])
 
                 now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 snaps = [(eid, now, "1x2", sel, odd, int(pre))

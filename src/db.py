@@ -176,6 +176,12 @@ def _migrate(conn):
     for col in new:
         if col not in cols:
             conn.execute(f"ALTER TABLE sofascore_matches ADD COLUMN {col} REAL")
+    # placar do 1o tempo (period1 do Sofascore) — o dado sempre esteve no cache
+    # de events, só nunca foi ingerido (auditoria 2026-07-07). Destrava aferição
+    # dos mercados de 1o/2o tempo e a calibração da hipótese de taxa constante.
+    for col in ("home_score_ht", "away_score_ht"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE sofascore_matches ADD COLUMN {col} INTEGER")
     # Backfill não-destrutivo: a linha principal de OU (2.5) já gravada nas colunas
     # legadas vira a forma canônica em odds_lines. INSERT OR IGNORE preserva o que
     # já existir lá (re-rodar a migração é inócuo).
@@ -236,6 +242,18 @@ ON CONFLICT(event_id, player) DO UPDATE SET
 
 def upsert_ss_matches(conn, rows):
     cur = conn.executemany(SS_MATCH, rows); conn.commit(); return cur.rowcount
+
+
+def update_ht_scores(conn, event_id, home_ht, away_ht):
+    """Placar do 1o tempo — UPDATE separado do upsert principal de propósito
+    (mesmo padrão de update_flat_markets): estender a tupla posicional de 20
+    campos do SS_MATCH quebraria todo chamador/teste existente. None é no-op:
+    jogo não terminado ou payload sem period1 não apaga dado já gravado."""
+    if home_ht is None or away_ht is None:
+        return
+    conn.execute("UPDATE sofascore_matches SET home_score_ht=?, away_score_ht=? "
+                 "WHERE event_id=?", (int(home_ht), int(away_ht), event_id))
+    conn.commit()
 
 
 def upsert_ss_ratings(conn, rows):

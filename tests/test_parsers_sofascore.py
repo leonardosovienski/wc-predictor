@@ -187,3 +187,29 @@ def test_parse_match_data_em_utc():
     m = parse_match(ev)
     assert m["date"] == "2022-12-18"
     assert m["home_score"] == 3
+
+
+def test_parse_match_extrai_placar_do_intervalo():
+    # period1 = placar do 1o tempo; vem no MESMO payload de events que o placar
+    # final — dado que ficou no cache sem ser ingerido até a auditoria 2026-07-07.
+    ev = {"id": 2, "startTimestamp": 1_671_375_600,
+          "status": {"type": "finished"},
+          "homeTeam": {"name": "Mexico"}, "awayTeam": {"name": "South Africa"},
+          "homeScore": {"current": 2, "period1": 1},
+          "awayScore": {"current": 0, "period1": 0}}
+    m = parse_match(ev)
+    assert m["home_score_ht"] == 1
+    assert m["away_score_ht"] == 0
+
+
+def test_parse_match_ht_nulo_se_nao_terminou():
+    # jogo em andamento pode ter period1 parcial no payload — não é placar de
+    # intervalo consolidado, então NÃO entra (mesma regra do placar final).
+    ev = {"id": 3, "startTimestamp": 1_671_375_600,
+          "status": {"type": "inprogress"},
+          "homeTeam": {"name": "A"}, "awayTeam": {"name": "B"},
+          "homeScore": {"current": 1, "period1": 1},
+          "awayScore": {"current": 0, "period1": 0}}
+    m = parse_match(ev)
+    assert m["home_score_ht"] is None
+    assert m["away_score_ht"] is None

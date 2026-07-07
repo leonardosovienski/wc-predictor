@@ -83,3 +83,18 @@ def test_snapshots_acumulam_no_tempo(conn):
     n = conn.execute(
         "SELECT COUNT(*) FROM odds_snapshots WHERE event_id=11").fetchone()[0]
     assert n == 2
+
+
+def test_update_ht_scores_grava_e_none_e_noop(conn):
+    # migração criou as colunas home_score_ht/away_score_ht (INTEGER) e o
+    # UPDATE separado grava sem mexer na tupla de 20 campos do upsert.
+    db.upsert_ss_matches(conn, [_row(30)])
+    db.update_ht_scores(conn, 30, 1, 0)
+    ht = conn.execute("SELECT home_score_ht, away_score_ht FROM sofascore_matches "
+                      "WHERE event_id=30").fetchone()
+    assert ht == (1, 0)
+    # None (jogo não terminado / payload sem period1) NÃO apaga o que já existe
+    db.update_ht_scores(conn, 30, None, None)
+    ht = conn.execute("SELECT home_score_ht, away_score_ht FROM sofascore_matches "
+                      "WHERE event_id=30").fetchone()
+    assert ht == (1, 0)
