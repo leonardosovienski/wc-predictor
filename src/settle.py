@@ -96,6 +96,10 @@ def record_result(home, away, home_score, away_score, *, match_date=None,
     pred = _find_prediction(home, away, match_date, pred_path)
     if pred is not None:
         pred = _orient(pred, home, away)
+        # sem --date do operador, herda a data que o palpite congelou — antes
+        # disso TODO results.jsonl saía com match_date nulo (auditoria 2026-07-07)
+        if match_date is None:
+            match_date = pred.get("match_date")
     hs, as_ = int(home_score), int(away_score)
     record = {
         "recorded_at": recorded_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),

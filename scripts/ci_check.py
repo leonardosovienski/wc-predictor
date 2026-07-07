@@ -23,12 +23,24 @@ Como hook de pre-commit (opcional), crie .git/hooks/pre-commit com:
 """
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _smoke_env() -> dict:
+    """Ambiente pros smoke tests: predições de teste NÃO entram no log de
+    produção. Sem isto cada rodada do CI gravava um 'Brazil x France' falso em
+    data/predictions.jsonl (achado 2026-07-07: 18 linhas de lixo acumuladas —
+    o log é a janela out-of-sample da Copa, poluí-lo distorce a avaliação)."""
+    env = dict(os.environ)
+    env["PREDICTIONS_LOG_PATH"] = str(Path(tempfile.gettempdir()) / "ci_smoke_predictions.jsonl")
+    return env
 
 # Modulos de PESQUISA: banco estritamente somente-leitura (P12).
 RESEARCH_DB_FILES = [
@@ -144,7 +156,7 @@ def check_predict_smoke() -> None:
     r = subprocess.run([sys.executable, "-X", "utf8", "-m", "src.predict",
                         "Brazil", "France", "--neutral", "--json"],
                        cwd=ROOT, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
+                       encoding="utf-8", errors="replace", env=_smoke_env())
     out = r.stdout or ""
     if r.returncode != 0:
         failures.append(f"predict saiu com exit {r.returncode}: {(r.stderr or '')[-200:]}")
@@ -170,7 +182,7 @@ def _check_live_flag(flag: str, extra_args: list[str], result_key: str) -> None:
     r = subprocess.run([sys.executable, "-X", "utf8", "scripts/prever.py",
                         "Brazil", "France", *extra_args, "--json"],
                        cwd=ROOT, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
+                       encoding="utf-8", errors="replace", env=_smoke_env())
     out = r.stdout or ""
     if r.returncode != 0:
         failures.append(f"prever.py {flag} saiu com exit {r.returncode}: "

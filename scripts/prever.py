@@ -118,12 +118,20 @@ def main():
 
     # OBRIGATÓRIO: mesmo registro append-only que src/predict.py grava — sem
     # isto os palpites deste script não entram na avaliação vs. resultado real.
+    # match_date vem do fixture em aberto na base (qualquer ordem casa/fora);
+    # sem ele o settle.py só casa por nome e o filtro por data fica inútil
+    # (auditoria 2026-07-07: 46 de 110 linhas do log estavam com data nula).
     try:
         from src.prediction_log import log_prediction
+        row = conn.execute(
+            "SELECT date FROM matches WHERE home_score IS NULL AND "
+            "((home_team=? AND away_team=?) OR (home_team=? AND away_team=?)) "
+            "ORDER BY date LIMIT 1", (ta, tb, tb, ta)).fetchone()
+        match_date = row[0] if row else None
         r = model.predict_match(elo[ta], elo[tb], params, adv,
                                 max_goals=cfg["model"]["max_goals"])
         log_prediction(ta, tb, not args.mando, elo[ta], elo[tb], params, r,
-                       market=data["core"]["market"])
+                       match_date=match_date, market=data["core"]["market"])
     except Exception as e:
         print(f"[AVISO: predição NÃO registrada no log ({e})]", file=sys.stderr)
 
