@@ -101,7 +101,11 @@ def log_period_prediction(home, away, neutral, period, fraction, live,
         "current_score": list(meta["current_score"]),
         "fraction": round(float(fraction), 4),
         "calibration": None if calibration is None else
-            {"frac1": round(calibration["frac1"], 4), "n": calibration["n"]},
+            {"frac1": round(calibration["frac1"], 4), "n": calibration["n"],
+             "ci_low": None if calibration.get("ci_low") is None
+                       else round(calibration["ci_low"], 4),
+             "ci_high": None if calibration.get("ci_high") is None
+                        else round(calibration["ci_high"], 4)},
         "period_pred": {
             "lambda_home": round(per["lambda_a"], 4), "lambda_away": round(per["lambda_b"], 4),
             "p_home": round(per["p_win"], 4), "p_draw": round(per["p_draw"], 4),

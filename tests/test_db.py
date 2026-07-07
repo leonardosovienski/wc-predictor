@@ -96,6 +96,10 @@ def test_ht_goal_fraction_calibra_e_respeita_minimo(conn):
     out = ht_goal_fraction(conn, min_games=50)
     assert out["n"] == 60
     assert abs(out["frac1"] - 1 / 3) < 1e-9
+    # IC95 via bootstrap por jogo (predictor_core): amostra degenerada (todos os
+    # jogos iguais a 1/3) -> IC colapsa no ponto, mas as chaves existem
+    assert abs(out["ci_low"] - 1 / 3) < 1e-9
+    assert abs(out["ci_high"] - 1 / 3) < 1e-9
 
 
 def test_update_ht_scores_grava_e_none_e_noop(conn):

@@ -93,13 +93,15 @@ def test_log_period_prediction_grava_schema_proprio(tmp_path):
     from src.prediction_log import log_period_prediction
     p = tmp_path / "period.jsonl"
     log_period_prediction("Switzerland", "Colombia", True, "2T", 0.629, _LIVE,
-                          calibration={"frac1": 0.3707, "n": 122},
+                          calibration={"frac1": 0.3707, "n": 122,
+                                       "ci_low": 0.3221, "ci_high": 0.4197},
                           match_date="2026-07-06", path=p)
     rec = json.loads(p.read_text(encoding="utf-8").splitlines()[0])
     assert rec["kind"] == "period" and rec["period"] == "2T"
     assert rec["current_score"] == [0, 0]
     assert rec["fraction"] == 0.629
-    assert rec["calibration"] == {"frac1": 0.3707, "n": 122}
+    assert rec["calibration"] == {"frac1": 0.3707, "n": 122,
+                                  "ci_low": 0.3221, "ci_high": 0.4197}
     assert rec["period_pred"]["over"]["2.5"] == 0.22
     assert rec["final_pred"]["top_scores"][0] == [[0, 0], 0.23]
 

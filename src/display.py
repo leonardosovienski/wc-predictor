@@ -365,21 +365,38 @@ def ht_goal_fraction(conn, min_games=50):
     banco em runtime — nunca hardcoded, mesma filosofia do bootstrap_cache
     (o CLV fixado em código já divergiu do real uma vez; não repetir).
     None se não há dado suficiente (< min_games) — o chamador cai no 0.5
-    ingênuo e a saída avisa que está sem calibração."""
+    ingênuo e a saída avisa que está sem calibração.
+
+    IC95 via bootstrap do predictor_core reamostrando POR JOGO — gols do
+    mesmo jogo não são independentes (aproximação normal por-gol subestima
+    a incerteza), então a unidade de reamostragem é a linha (g1, gt) de
+    cada partida, não o gol individual."""
     if conn is None:
         return None
     try:
-        row = conn.execute(
-            "SELECT SUM(home_score_ht + away_score_ht), "
-            "SUM(home_score + away_score), COUNT(*) "
+        rows = conn.execute(
+            "SELECT home_score_ht + away_score_ht, home_score + away_score "
             "FROM sofascore_matches WHERE home_score_ht IS NOT NULL "
-            "AND home_score IS NOT NULL").fetchone()
+            "AND home_score IS NOT NULL").fetchall()
     except Exception:                      # coluna ainda não migrada
         return None
-    g1, gt, n = row or (None, None, 0)
+    n = len(rows)
+    gt = sum(t for _, t in rows)
     if not gt or n < min_games:
         return None
-    return {"frac1": g1 / gt, "n": n}
+    frac = sum(g1 for g1, _ in rows) / gt
+
+    def _frac(sample):
+        tot = sum(t for _, t in sample)
+        return (sum(g1 for g1, _ in sample) / tot) if tot else 0.0
+
+    try:
+        from predictor_core.measurement.bootstrap import bootstrap_ci
+        lo, hi, _ = bootstrap_ci(list(rows), _frac, scheme="iid",
+                                 n_boot=2000, seed=13)
+    except Exception:                      # core indisponível: fração sem IC
+        lo = hi = None
+    return {"frac1": frac, "n": n, "ci_low": lo, "ci_high": hi}
 
 
 def compute_live(name_a, name_b, elo, params, cfg, neutral, cur_a, cur_b, fraction=0.5,
@@ -446,8 +463,10 @@ def render_live(data, kickoff=False, calib=None):
     ca, cb = m["current_score"]
     periodo = "1º tempo" if kickoff else "2º tempo"
     if calib:
+        ic = (f" IC95 [{calib['ci_low']:.0%}, {calib['ci_high']:.0%}]"
+              if calib.get("ci_low") is not None else "")
         print(f"\n[SEM CLV — taxa de gol do período calibrada com dado real "
-             f"(1º tempo = {calib['frac1']:.0%} dos gols, n={calib['n']} jogos), "
+             f"(1º tempo = {calib['frac1']:.0%} dos gols{ic}, n={calib['n']} jogos), "
              "mas nenhum mercado de tempo tem CLV medido no backtest]")
     else:
         print(f"\n[SEM VALIDAÇÃO — projeção de {periodo} assume taxa de gol constante "

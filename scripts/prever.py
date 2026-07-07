@@ -124,6 +124,20 @@ def main():
         except Exception as e:
             print(f"[AVISO: predição de período NÃO registrada no log ({e})]",
                  file=sys.stderr)
+        # telemetria do core — predict.py emite pra todo jogo cheio; período
+        # ficava invisível pro observability (achado da análise do core)
+        try:
+            from predictor_core.obs import emit_event
+            emit_event("wc", "period_prediction",
+                       metrics={"lambda_home": round(live["period"]["lambda_a"], 3),
+                                "lambda_away": round(live["period"]["lambda_b"], 3),
+                                "fraction": round(frac, 4)},
+                       metadata={"period": "1T" if kickoff else "2T",
+                                 "fixture_id": f"{ta}_vs_{tb}",
+                                 "current_score": f"{cur_a}-{cur_b}",
+                                 "calibrated": calib is not None})
+        except Exception:
+            pass   # telemetria nunca derruba o serving
         if args.json:
             print(_json.dumps(live, ensure_ascii=False, indent=2))
         else:
