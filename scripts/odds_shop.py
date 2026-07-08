@@ -57,6 +57,15 @@ SPORT = "soccer_fifa_world_cup"
 MIN_EDGE_DEFAULT = 0.03      # edge minimo vs MELHOR preco para virar recomendacao
 MIN_BOOKS = 4                # menos casas que isso = consenso fraco, so informa
 
+# Janela do BACKTEST (config.yaml backtest.min/max_edge) — o unico gatilho com
+# CLV comprovado (O/U 2.5 vs preco bruto). Fallback = valores auditados.
+try:
+    from src.ingest import load_config
+    _bt = load_config().get("backtest", {})
+    _BT_MIN, _BT_MAX = float(_bt.get("min_edge", 0.02)), float(_bt.get("max_edge", 0.15))
+except Exception:
+    _BT_MIN, _BT_MAX = 0.02, 0.15
+
 
 def _fetch(url: str) -> dict | list:
     req = urllib.request.Request(url, headers={"User-Agent": "wc-predictor-v2"})
@@ -212,11 +221,25 @@ def analyze(events: list, jogo_filter: str | None, min_edge: float) -> None:
                 print(f"  {name:<12}{d['best'][0]:>11.2f}  {d['best'][1][:18]:<18}"
                       f"{d['consensus_prob']:>9.1%}"
                       f"{(f'{p_mod:.1%}' if p_mod is not None else '—'):>8}  {v}")
+                # JANELA VALIDADA do backtest (min/max_edge do config, o único
+                # gatilho com CLV comprovado: O/U 2.5 vs preço bruto) — quando o
+                # edge do modelo vs MELHOR preço cai nela, imprime o comando de
+                # registro no livro-caixa pronto pra colar. Aposta só existe se
+                # for registrada ANTES do jogo (python -m src.bet_log).
+                if p_mod is not None:
+                    edge_best = p_mod - 1.0 / d["best"][0]
+                    if _BT_MIN < edge_best <= _BT_MAX:
+                        print(f"      -> JANELA VALIDADA ({edge_best:+.1%}): "
+                              f"python -m src.bet_log add \"{home}\" \"{away}\" ou25 "
+                              f"{name.lower()} {d['best'][0]} --casa \"{d['best'][1]}\" "
+                              f"--edge {edge_best:.4f} --prob {p_mod:.4f}")
 
     print("\nRegras aplicadas: recomendacao exige edge >= {:.0%} vs MELHOR preco, em".format(min_edge))
     print("zona confiavel (totais/empate) ou valor vs consenso do proprio mercado.")
     print("Vitoria de azarao pelo modelo NUNCA e' recomendada (vies de achatamento).")
-    print("Registre o que apostar em data/live_decisions.csv ANTES do jogo.")
+    print("'JANELA VALIDADA' = gatilho do backtest (unico com CLV comprovado);")
+    print("registre a aposta com o comando impresso ANTES do jogo e feche com")
+    print("`python -m src.bet_log settle` no placar final (ROI/CLV reais).")
 
 
 def main() -> int:
