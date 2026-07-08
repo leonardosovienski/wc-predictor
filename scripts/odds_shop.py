@@ -67,10 +67,17 @@ except Exception:
     _BT_MIN, _BT_MAX = 0.02, 0.15
 
 
+_quota = {"remaining": None, "used": None}   # headers da última chamada
+
+
 def _fetch(url: str) -> dict | list:
     req = urllib.request.Request(url, headers={"User-Agent": "wc-predictor-v2"})
     ctx = ssl.create_default_context()
     with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+        # quota do plano gratuito (500 req/mes): sem isto o operador descobre
+        # que acabou na semana da final, quando mais precisa do line shopping
+        _quota["remaining"] = r.headers.get("x-requests-remaining")
+        _quota["used"] = r.headers.get("x-requests-used")
         return json.loads(r.read().decode("utf-8"))
 
 
@@ -342,6 +349,9 @@ def _footer(min_edge: float) -> None:
     print("mercados de TEMPO sao [SEM CLV] — 'PICK >=60%' segue a regra da")
     print("retro-analise (prob >=60% acertou 78%), aposte menor ou so registre.")
     print("Feche tudo com `python -m src.bet_log settle HOME AWAY H A --ht H-A`.")
+    if _quota["remaining"] is not None:
+        print(f"Quota The Odds API: {_quota['remaining']} requests restantes "
+              f"({_quota['used']} usadas no ciclo).")
 
 
 def main() -> int:
