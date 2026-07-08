@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from src.bet_log import add_bet, settle_bet, summary
+from src.bet_log import (add_bet, bank_flow, bank_init, bank_state,
+                         settle_bet, summary)
 
 
 def test_add_grava_linha_aberta(tmp_path):
@@ -88,3 +89,44 @@ def test_summary_roi(tmp_path):
     assert t["n"] == 2 and t["staked"] == 2.0
     assert t["profit"] == pytest.approx(0.0)
     assert t["roi"] == pytest.approx(0.0)
+
+
+def test_banca_saldo_exposicao_e_drawdown(tmp_path):
+    bank = tmp_path / "bankroll.jsonl"
+    bets = tmp_path / "bets.jsonl"
+    bank_init(1000.0, 20.0, path=bank)                 # unidade = 2% da banca
+    add_bet("A1", "B1", "ou25", "under", 2.0, path=bets)
+    add_bet("A2", "B2", "ou25", "over", 2.5, path=bets)
+    st = bank_state(bank_path=bank, bets_path=bets)
+    assert st["balance"] == 1000.0                     # nada fechado ainda
+    assert st["open_units"] == 2.0 and st["open_money"] == 40.0
+    settle_bet("A1", "B1", 3, 1, path=bets)            # under 2.5 perde: -1u
+    settle_bet("A2", "B2", 2, 1, path=bets)            # over 2.5 ganha: +1.5u
+    st = bank_state(bank_path=bank, bets_path=bets)
+    assert st["profit_units"] == pytest.approx(0.5)
+    assert st["balance"] == pytest.approx(1000.0 + 0.5 * 20.0)
+    assert st["open_units"] == 0.0
+    # drawdown: perdeu 1u (20) antes de ganhar — pico 1000, vale 980
+    assert st["max_drawdown_money"] == pytest.approx(20.0)
+
+
+def test_banca_deposito_saque_e_reinit(tmp_path):
+    bank = tmp_path / "bankroll.jsonl"
+    bets = tmp_path / "bets.jsonl"
+    bank_init(500.0, 10.0, path=bank)
+    bank_flow("deposit", 200.0, path=bank)
+    bank_flow("withdraw", 100.0, path=bank)
+    st = bank_state(bank_path=bank, bets_path=bets)
+    assert st["balance"] == 600.0 and st["flows"] == 100.0
+    bank_init(1000.0, 20.0, path=bank)                 # reinit zera fluxos
+    st = bank_state(bank_path=bank, bets_path=bets)
+    assert st["balance"] == 1000.0 and st["flows"] == 0.0
+
+
+def test_banca_none_sem_init(tmp_path):
+    assert bank_state(bank_path=tmp_path / "nada.jsonl",
+                      bets_path=tmp_path / "bets.jsonl") is None
+    with pytest.raises(ValueError):
+        bank_init(-5, 1, path=tmp_path / "bankroll.jsonl")
+    with pytest.raises(ValueError):
+        bank_flow("roubo", 10, path=tmp_path / "bankroll.jsonl")

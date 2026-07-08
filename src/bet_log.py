@@ -20,8 +20,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ENV_PATH = "BETS_LOG_PATH"
+ENV_BANK_PATH = "BANKROLL_LOG_PATH"
 ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT = ROOT / "data" / "bets.jsonl"
+_BANK_DEFAULT = ROOT / "data" / "bankroll.jsonl"
+
+# guarda-corpos de gestão de banca (flat stake, alinhado ao backtest):
+#   unidade > 2% da banca inicial = agressivo demais pra variância real do
+#   O/U (3/8 de acerto numa rodada é normal); exposição aberta > 10u = muita
+#   banca em jogo ao mesmo tempo. Avisos, não bloqueios — a banca é do operador.
+MAX_UNIT_PCT = 0.02
+MAX_OPEN_UNITS = 10.0
 
 # mercado -> (linha, período). FT = jogo inteiro; 1T/2T = por tempo (settle
 # exige o placar do intervalo). Só o ou25 tem CLV comprovado no backtest — os
@@ -155,6 +164,90 @@ def settle_bet(home, away, home_score, away_score, *, ht=None, path=None,
     return out
 
 
+def _resolve_bank(path=None) -> Path:
+    return Path(path or os.environ.get(ENV_BANK_PATH) or _BANK_DEFAULT)
+
+
+def bank_init(amount, unit, *, currency="BRL", path=None, at=None) -> dict:
+    """Abre (ou reabre) a banca: valor total e valor da UNIDADE em dinheiro.
+    Append-only — um novo init reinicia a contagem a partir dele (o histórico
+    anterior fica no arquivo, auditável)."""
+    if amount <= 0 or unit <= 0:
+        raise ValueError("banca e unidade devem ser positivas")
+    rec = {"at": at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+           "kind": "init", "amount": float(amount), "unit": float(unit),
+           "currency": currency}
+    dest = _resolve_bank(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return rec
+
+
+def bank_flow(kind, amount, *, path=None, at=None) -> dict:
+    """Depósito ou saque (kind='deposit'|'withdraw')."""
+    if kind not in ("deposit", "withdraw"):
+        raise ValueError(f"kind inválido: {kind}")
+    if amount <= 0:
+        raise ValueError("valor deve ser positivo")
+    rec = {"at": at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+           "kind": kind, "amount": float(amount)}
+    dest = _resolve_bank(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return rec
+
+
+def bank_state(bank_path=None, bets_path=None) -> dict | None:
+    """Estado da banca: saldo em dinheiro, exposição aberta, drawdown máximo.
+    None se a banca nunca foi aberta. Só considera settlements DEPOIS do
+    último init (a banca conta a partir de quando foi aberta)."""
+    p = _resolve_bank(bank_path)
+    if not p.exists():
+        return None
+    init, flows = None, 0.0
+    for line in p.read_text(encoding="utf-8").splitlines():
+        r = json.loads(line)
+        if r["kind"] == "init":
+            init, flows = r, 0.0            # novo init zera a contagem
+        elif r["kind"] == "deposit":
+            flows += r["amount"]
+        elif r["kind"] == "withdraw":
+            flows -= r["amount"]
+    if init is None:
+        return None
+    unit = init["unit"]
+    settles = sorted((r for r in _read(bets_path)
+                      if r["kind"] == "settlement" and r["recorded_at"] >= init["at"]),
+                     key=lambda r: r["recorded_at"])
+    profit_units = sum(r["profit"] for r in settles)
+    # equity curve em dinheiro -> max drawdown (do pico ao vale)
+    equity, peak, mdd = init["amount"] + flows, init["amount"] + flows, 0.0
+    for r in settles:
+        equity += r["profit"] * unit
+        peak = max(peak, equity)
+        mdd = max(mdd, peak - equity)
+    # exposição = TODA aposta ainda aberta no livro (mesmo registrada antes do
+    # init — aposta viva é dinheiro em jogo desta banca), casada por linha
+    all_rows = _read(bets_path)
+    settled_lines = {r["bet_line_no"] for r in all_rows if r["kind"] == "settlement"}
+    open_units = sum(r["stake"] for i, r in enumerate(all_rows)
+                     if r["kind"] == "bet" and i not in settled_lines)
+    balance = init["amount"] + flows + profit_units * unit
+    return {
+        "currency": init.get("currency", "BRL"), "initial": init["amount"],
+        "unit": unit, "unit_pct": unit / init["amount"],
+        "flows": flows, "balance": round(balance, 2),
+        "profit_units": round(profit_units, 4),
+        "profit_money": round(profit_units * unit, 2),
+        "n_settled": len(settles), "open_units": round(max(open_units, 0.0), 2),
+        "open_money": round(max(open_units, 0.0) * unit, 2),
+        "max_drawdown_money": round(mdd, 2),
+        "since": init["at"],
+    }
+
+
 def summary(path=None) -> dict:
     """ROI e CLV acumulados por mercado (só apostas fechadas). A chave carrega
     o grupo: mercado validado (ou25) separado dos informativos — misturar os
@@ -203,6 +296,15 @@ def main():
 
     sub.add_parser("summary", help="ROI/CLV acumulado por mercado")
 
+    b = sub.add_parser("banca", help="painel da banca (saldo/exposição/drawdown)")
+    b.add_argument("--init", type=float, metavar="VALOR",
+                   help="abre a banca com este valor total")
+    b.add_argument("--unidade", type=float,
+                   help="valor da unidade em dinheiro (com --init)")
+    b.add_argument("--deposito", type=float, metavar="VALOR")
+    b.add_argument("--saque", type=float, metavar="VALOR")
+    b.add_argument("--moeda", default="BRL")
+
     args = ap.parse_args()
     if args.cmd == "add":
         rec = add_bet(args.home, args.away, args.market, args.selection, args.odds,
@@ -224,6 +326,43 @@ def main():
                   f"@ {r['odds']} -> {r['profit']:+.2f}u{clv}")
         if recs and args.ht is None:
             print("(apostas de 1T/2T, se houver, seguem abertas — repita com --ht H-A)")
+    elif args.cmd == "banca":
+        if args.init is not None:
+            if args.unidade is None:
+                ap.error("--init exige --unidade (valor da unidade em dinheiro)")
+            rec = bank_init(args.init, args.unidade, currency=args.moeda)
+            pct = args.unidade / args.init
+            print(f"banca aberta: {rec['amount']:.2f} {rec['currency']} | "
+                  f"unidade = {rec['unit']:.2f} ({pct:.1%} da banca)")
+            if pct > MAX_UNIT_PCT:
+                print(f"  AVISO: unidade acima de {MAX_UNIT_PCT:.0%} da banca — "
+                      "3 derrotas em 8 apostas é variância NORMAL do O/U; "
+                      "unidade grande transforma variância em ruína.")
+        if args.deposito:
+            bank_flow("deposit", args.deposito)
+            print(f"depósito: +{args.deposito:.2f}")
+        if args.saque:
+            bank_flow("withdraw", args.saque)
+            print(f"saque: -{args.saque:.2f}")
+        st = bank_state()
+        if st is None:
+            print("banca não aberta — use: python -m src.bet_log banca "
+                  "--init VALOR --unidade VALOR_DA_UNIDADE")
+            return
+        cur = st["currency"]
+        print(f"\n=== BANCA ({cur}) — desde {st['since'][:10]} ===")
+        fluxos = f", fluxos {st['flows']:+.2f}" if st["flows"] else ""
+        print(f"  saldo atual:      {st['balance']:.2f}"
+              f"  (inicial {st['initial']:.2f}{fluxos})")
+        print(f"  unidade:          {st['unit']:.2f}  ({st['unit_pct']:.1%} da banca inicial)")
+        print(f"  resultado:        {st['profit_units']:+.2f}u = {st['profit_money']:+.2f} {cur}"
+              f"  em {st['n_settled']} apostas fechadas")
+        print(f"  em jogo (aberto): {st['open_units']:.1f}u = {st['open_money']:.2f} {cur}")
+        print(f"  drawdown máximo:  {st['max_drawdown_money']:.2f} {cur}")
+        if st["unit_pct"] > MAX_UNIT_PCT:
+            print(f"  AVISO: unidade > {MAX_UNIT_PCT:.0%} da banca inicial")
+        if st["open_units"] > MAX_OPEN_UNITS:
+            print(f"  AVISO: exposição aberta > {MAX_OPEN_UNITS:.0f}u")
     else:
         tally = summary()
         if not tally:
