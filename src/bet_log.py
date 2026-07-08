@@ -23,7 +23,18 @@ ENV_PATH = "BETS_LOG_PATH"
 ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT = ROOT / "data" / "bets.jsonl"
 
-MARKETS = {"ou25": 2.5}          # linha por mercado; extensível (ou15, ah, ...)
+# mercado -> (linha, período). FT = jogo inteiro; 1T/2T = por tempo (settle
+# exige o placar do intervalo). Só o ou25 tem CLV comprovado no backtest — os
+# demais entram como registro fiel do que o operador apostou, marcados
+# validated=False, e o summary separa os dois grupos (não misturar ROI de
+# mercado validado com aposta informativa).
+MARKETS = {
+    "ou25":    (2.5, "FT"),
+    "ou15":    (1.5, "FT"),
+    "ou05_1t": (0.5, "1T"), "ou15_1t": (1.5, "1T"), "ou25_1t": (2.5, "1T"),
+    "ou05_2t": (0.5, "2T"), "ou15_2t": (1.5, "2T"), "ou25_2t": (2.5, "2T"),
+}
+VALIDATED = {"ou25"}             # único gatilho com CLV comprovado
 
 
 def _resolve(path=None) -> Path:
@@ -54,13 +65,16 @@ def add_bet(home, away, market, selection, odds, *, book=None, stake=1.0,
         raise ValueError(f"mercado desconhecido: {market!r} — use um de {sorted(MARKETS)}")
     if odds <= 1.0:
         raise ValueError(f"odd decimal inválida: {odds}")
+    line, period = MARKETS[market]
     rec = {
         "logged_at": logged_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "kind": "bet", "status": "open",
         "home": home, "away": away, "match_date": match_date,
-        "market": market, "line": MARKETS[market], "selection": selection.lower(),
+        "market": market, "line": line, "period": period,
+        "selection": selection.lower(),
         "odds": float(odds), "book": book, "stake": float(stake),
         "model_prob": model_prob, "edge": edge, "note": note,
+        "validated": market in VALIDATED,
     }
     _append(rec, path)
     return rec
@@ -82,13 +96,20 @@ def _close_shin_prob(home, away, selection):
     return mk["p_over"] if selection == "over" else mk["p_under"]
 
 
-def settle_bet(home, away, home_score, away_score, *, path=None,
+def settle_bet(home, away, home_score, away_score, *, ht=None, path=None,
                recorded_at=None) -> list[dict]:
     """Fecha TODAS as apostas abertas deste confronto contra o placar final.
     Grava uma linha 'settlement' por aposta (append-only — a aposta original
-    não é editada). Devolve os settlements gravados."""
+    não é editada). Devolve os settlements gravados.
+
+    `ht` = placar do intervalo (tupla ou 'H-A'), na MESMA ordem casa/fora do
+    placar final informado — obrigatório pra fechar apostas de 1T/2T; sem ele
+    essas ficam abertas (aviso no CLI), as de jogo inteiro fecham normal."""
     from .predict import _canon
-    total = int(home_score) + int(away_score)
+    if isinstance(ht, str):
+        ht = tuple(int(x) for x in ht.split("-", 1))
+    total_ft = int(home_score) + int(away_score)
+    total_ht = None if ht is None else int(ht[0]) + int(ht[1])
     target = frozenset((_canon(home), _canon(away)))
     open_ids, settled_ids = {}, set()
     for i, r in enumerate(_read(path)):
@@ -101,20 +122,33 @@ def settle_bet(home, away, home_score, away_score, *, path=None,
     for line_no, bet in open_ids.items():
         if line_no in settled_ids:
             continue
+        period = bet.get("period", "FT")
+        if period == "FT":
+            total = total_ft
+        elif total_ht is None:
+            continue                       # 1T/2T sem HT informado: segue aberta
+        else:
+            total = total_ht if period == "1T" else total_ft - total_ht
         won = (bet["selection"] == "over") == (total > bet["line"]) \
             if total != bet["line"] else None          # push só em linha inteira
         profit = 0.0 if won is None else \
             round(bet["stake"] * (bet["odds"] - 1.0), 4) if won else -bet["stake"]
-        p_close = _close_shin_prob(bet["home"], bet["away"], bet["selection"])
-        clv = None if p_close is None else round(bet["odds"] * p_close - 1.0, 4)
+        # CLV de fechamento: só o ou25 tem odd de close no banco (linha 2.5)
+        clv = None
+        if bet["market"] == "ou25":
+            p_close = _close_shin_prob(bet["home"], bet["away"], bet["selection"])
+            clv = None if p_close is None else round(bet["odds"] * p_close - 1.0, 4)
         rec = {
             "recorded_at": recorded_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "kind": "settlement", "bet_line_no": line_no,
             "home": bet["home"], "away": bet["away"],
-            "score": f"{home_score}-{away_score}", "total_goals": total,
-            "market": bet["market"], "selection": bet["selection"],
+            "score": f"{home_score}-{away_score}",
+            "ht": None if ht is None else f"{ht[0]}-{ht[1]}",
+            "total_do_periodo": total,
+            "market": bet["market"], "period": period, "selection": bet["selection"],
             "odds": bet["odds"], "stake": bet["stake"],
             "won": won, "profit": profit, "clv_close": clv,
+            "validated": bet.get("validated", bet["market"] in VALIDATED),
         }
         _append(rec, path)
         out.append(rec)
@@ -122,13 +156,16 @@ def settle_bet(home, away, home_score, away_score, *, path=None,
 
 
 def summary(path=None) -> dict:
-    """ROI e CLV acumulados por mercado (só apostas fechadas)."""
+    """ROI e CLV acumulados por mercado (só apostas fechadas). A chave carrega
+    o grupo: mercado validado (ou25) separado dos informativos — misturar os
+    dois esconderia um ROI negativo atrás do outro."""
     tally: dict = {}
     for r in _read(path):
         if r["kind"] != "settlement":
             continue
         t = tally.setdefault(r["market"], {"n": 0, "staked": 0.0, "profit": 0.0,
-                                           "clv_sum": 0.0, "clv_n": 0})
+                                           "clv_sum": 0.0, "clv_n": 0,
+                                           "validated": r.get("validated", False)})
         t["n"] += 1
         t["staked"] += r["stake"]
         t["profit"] += r["profit"]
@@ -161,6 +198,8 @@ def main():
     s = sub.add_parser("settle", help="fecha apostas do confronto no placar final")
     s.add_argument("home"); s.add_argument("away")
     s.add_argument("home_score", type=int); s.add_argument("away_score", type=int)
+    s.add_argument("--ht", help="placar do intervalo 'H-A' (obrigatório pra "
+                                "fechar apostas de 1T/2T)")
 
     sub.add_parser("summary", help="ROI/CLV acumulado por mercado")
 
@@ -169,27 +208,37 @@ def main():
         rec = add_bet(args.home, args.away, args.market, args.selection, args.odds,
                       book=args.book, stake=args.stake, model_prob=args.model_prob,
                       edge=args.edge, match_date=args.match_date, note=args.note)
-        print(f"registrada: {rec['selection']} {rec['line']} @ {rec['odds']}"
-              f" ({rec['book'] or 'casa nao informada'}) stake {rec['stake']}u"
-              f" — {rec['home']} x {rec['away']}")
+        aviso = "" if rec["validated"] else "  [mercado SEM CLV validado]"
+        print(f"registrada: {rec['selection']} {rec['line']} ({rec['period']}) "
+              f"@ {rec['odds']} ({rec['book'] or 'casa nao informada'}) "
+              f"stake {rec['stake']}u — {rec['home']} x {rec['away']}{aviso}")
     elif args.cmd == "settle":
-        recs = settle_bet(args.home, args.away, args.home_score, args.away_score)
+        recs = settle_bet(args.home, args.away, args.home_score, args.away_score,
+                          ht=args.ht)
         if not recs:
             print("nenhuma aposta aberta para este confronto")
         for r in recs:
             res = "PUSH" if r["won"] is None else ("GANHOU" if r["won"] else "PERDEU")
             clv = "" if r["clv_close"] is None else f" | CLV {r['clv_close']:+.2%}"
-            print(f"{res}: {r['selection']} {r['market']} @ {r['odds']}"
-                  f" -> {r['profit']:+.2f}u{clv}")
+            print(f"{res}: {r['selection']} {r['market']} ({r['period']}) "
+                  f"@ {r['odds']} -> {r['profit']:+.2f}u{clv}")
+        if recs and args.ht is None:
+            print("(apostas de 1T/2T, se houver, seguem abertas — repita com --ht H-A)")
     else:
         tally = summary()
         if not tally:
             print("nenhuma aposta fechada ainda (data/bets.jsonl)")
-        for m, t in tally.items():
-            clv = "sem odds de fechamento" if t["clv_medio"] is None \
-                else f"CLV médio {t['clv_medio']:+.2%}"
-            print(f"  {m}: {t['n']} apostas | staked {t['staked']:.1f}u | "
-                  f"lucro {t['profit']:+.2f}u | ROI {t['roi']:+.1%} | {clv}")
+        for grupo, ok in (("MERCADO VALIDADO (CLV comprovado)", True),
+                          ("INFORMATIVO (sem CLV)", False)):
+            linhas = {m: t for m, t in tally.items() if t["validated"] == ok}
+            if not linhas:
+                continue
+            print(f"\n{grupo}:")
+            for m, t in linhas.items():
+                clv = "sem odd de fechamento" if t["clv_medio"] is None \
+                    else f"CLV médio {t['clv_medio']:+.2%}"
+                print(f"  {m}: {t['n']} apostas | staked {t['staked']:.1f}u | "
+                      f"lucro {t['profit']:+.2f}u | ROI {t['roi']:+.1%} | {clv}")
 
 
 if __name__ == "__main__":

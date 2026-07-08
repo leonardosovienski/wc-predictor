@@ -51,6 +51,33 @@ def test_settle_casa_por_conjunto_de_times(tmp_path):
     assert len(recs) == 1 and recs[0]["won"] is False
 
 
+def test_settle_periodo_exige_ht_e_fecha_com_ht(tmp_path):
+    # 1T/2T: sem --ht a aposta de período segue aberta; com HT fecha certo.
+    p = tmp_path / "bets.jsonl"
+    add_bet("A", "B", "ou05_1t", "over", 2.4, path=p)     # >=1 gol no 1o tempo
+    add_bet("A", "B", "ou15_2t", "under", 1.8, path=p)    # <2 gols no 2o tempo
+    add_bet("A", "B", "ou25", "under", 2.0, path=p)       # jogo inteiro
+    recs = settle_bet("A", "B", 2, 1, path=p)             # sem ht
+    assert [r["market"] for r in recs] == ["ou25"]        # só o FT fechou
+    recs = settle_bet("A", "B", 2, 1, ht="0-1", path=p)   # 1T=1 gol, 2T=2 gols
+    by = {r["market"]: r for r in recs}
+    assert by["ou05_1t"]["won"] is True                   # 1 > 0.5
+    assert by["ou15_2t"]["won"] is False                  # 2 > 1.5 -> under perde
+    assert by["ou05_1t"]["validated"] is False            # marcado sem CLV
+    # nada re-fecha
+    assert settle_bet("A", "B", 2, 1, ht="0-1", path=p) == []
+
+
+def test_summary_separa_validado_de_informativo(tmp_path):
+    p = tmp_path / "bets.jsonl"
+    add_bet("A", "B", "ou25", "under", 2.0, path=p)
+    add_bet("A", "B", "ou05_1t", "over", 2.0, path=p)
+    settle_bet("A", "B", 1, 0, ht="1-0", path=p)
+    t = summary(path=p)
+    assert t["ou25"]["validated"] is True
+    assert t["ou05_1t"]["validated"] is False
+
+
 def test_summary_roi(tmp_path):
     p = tmp_path / "bets.jsonl"
     add_bet("A1", "B1", "ou25", "under", 2.0, path=p)

@@ -145,6 +145,60 @@ def model_probs_for(home: str, away: str):
             "over25": ou["Over"], "under25": ou["Under"]}
 
 
+def period_probs_for(home: str, away: str):
+    """P(over linha) do MODELO por período (1T/2T), com a fração calibrada no
+    placar de intervalo ingerido (display.ht_goal_fraction). None se times
+    desconhecidos ou sem calibração — mercado de tempo SEM modelo é só preço."""
+    from src.display import ht_goal_fraction
+    from src.model import _score_grid
+
+    conn = sqlite3.connect(f"file:{ROOT / 'data' / 'matches.db'}?mode=ro", uri=True)
+    conn.execute("PRAGMA query_only=ON")
+    elo = {t: e for t, e in conn.execute("SELECT team, elo FROM current_elo")}
+    prow = conn.execute("SELECT param_a, param_b, param_alpha, param_rho "
+                        "FROM model_parameters WHERE id=1").fetchone()
+    calib = ht_goal_fraction(conn)
+    conn.close()
+    canon_elo = {_canon(t): e for t, e in elo.items()}
+    eh, ea = canon_elo.get(_canon(home)), canon_elo.get(_canon(away))
+    if eh is None or ea is None or not prow or calib is None:
+        return None
+    a, b, alpha, rho = prow
+    import math
+
+    import numpy as np
+    diff = (eh - ea) / 400.0
+    lam_a, lam_b = math.exp(a + b * diff), math.exp(a - b * diff)
+    out = {"calib_n": calib["n"]}
+    for tag, fr in (("1T", calib["frac1"]), ("2T", 1.0 - calib["frac1"])):
+        g = _score_grid(lam_a * fr, lam_b * fr, alpha, rho, 12)
+        k = np.arange(g.shape[0])
+        tot = k.reshape(-1, 1) + k.reshape(1, -1)
+        out[tag] = {ln: float(g[tot > ln].sum()) for ln in (0.5, 1.5, 2.5)}
+    return out
+
+
+def fetch_period_odds(api_key: str, event_id: str) -> dict | None:
+    """Mercados de tempo (totals_h1/h2) — só existem no endpoint POR EVENTO da
+    The Odds API (o bulk /odds não os serve). Custo de quota: mercados×regiões
+    por chamada. None em erro (jogo sem esses mercados ainda, plano, etc.)."""
+    params = urllib.parse.urlencode({
+        "apiKey": api_key, "regions": "eu,uk,us",
+        "markets": "totals_h1,totals_h2", "oddsFormat": "decimal",
+    })
+    try:
+        data = _fetch(f"{API_BASE}/sports/{SPORT}/events/{event_id}/odds?{params}")
+    except Exception as e:
+        print(f"  (mercados de tempo indisponiveis: {e})")
+        return None
+    out_dir = ROOT / "data" / "odds_shop"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    (out_dir / f"odds_h1h2_{event_id[:12]}_{stamp}.json").write_text(
+        json.dumps(data), encoding="utf-8")
+    return data
+
+
 def _verdict(selection_kind: str, p_model, p_cons, best_odd, n_books, min_edge) -> str:
     """Regras de recomendacao pos-auditoria."""
     imp_best = 1.0 / best_odd
@@ -177,7 +231,8 @@ def _started(ev: dict) -> bool:
         return False
 
 
-def analyze(events: list, jogo_filter: str | None, min_edge: float) -> None:
+def analyze(events: list, jogo_filter: str | None, min_edge: float,
+            tempos_key: str | None = None) -> None:
     for ev in events:
         home, away = ev.get("home_team", "?"), ev.get("away_team", "?")
         if jogo_filter and jogo_filter.lower() not in f"{home} {away}".lower():
@@ -234,12 +289,59 @@ def analyze(events: list, jogo_filter: str | None, min_edge: float) -> None:
                               f"{name.lower()} {d['best'][0]} --casa \"{d['best'][1]}\" "
                               f"--edge {edge_best:.4f} --prob {p_mod:.4f}")
 
+        if tempos_key:
+            _analyze_periods(ev, home, away, tempos_key)
+
+
+_PERIOD_MARKETS = (("totals_h1", "1T"), ("totals_h2", "2T"))
+_PERIOD_LINES = (0.5, 1.5, 2.5)
+
+
+def _analyze_periods(ev: dict, home: str, away: str, api_key: str) -> None:
+    """Odds de 1T/2T (melhor preço + consenso) cruzadas com o modelo calibrado.
+    SEM CLV validado — o marcador é 'PICK >=60%' (regra da retro-análise das
+    oitavas: picks com prob >=60% acertaram 78%), nunca 'JANELA VALIDADA'."""
+    data = fetch_period_odds(api_key, ev.get("id", ""))
+    if not data:
+        return
+    pp = period_probs_for(home, away)
+    for mkey, tag in _PERIOD_MARKETS:
+        blocks = []
+        for ln in _PERIOD_LINES:
+            c = consensus(data, mkey, point=ln)
+            if c:
+                blocks.append((ln, c))
+        if not blocks:
+            continue
+        print(f"  {'Gols ' + tag:<12}{'melhor odd':>11}  {'casa':<18}{'consenso':>9}"
+              f"{'modelo':>8}  [SEM CLV validado]")
+        for ln, c in blocks:
+            for name, d in c.items():
+                p_over = pp and pp[tag].get(ln)
+                p_mod = None if p_over is None else \
+                    (p_over if name == "Over" else 1.0 - p_over)
+                marker = ""
+                if p_mod is not None:
+                    edge_best = p_mod - 1.0 / d["best"][0]
+                    if p_mod >= 0.60 and edge_best > 0:
+                        mk_code = f"ou{str(ln).replace('.', '')}_{tag.lower()}"
+                        marker = (f"PICK >=60% ({edge_best:+.1%}) — registrar: "
+                                  f"python -m src.bet_log add \"{home}\" \"{away}\" "
+                                  f"{mk_code} {name.lower()} {d['best'][0]} "
+                                  f"--casa \"{d['best'][1]}\"")
+                print(f"  {name + ' ' + str(ln):<12}{d['best'][0]:>11.2f}  "
+                      f"{d['best'][1][:18]:<18}{d['consensus_prob']:>9.1%}"
+                      f"{(f'{p_mod:.1%}' if p_mod is not None else '—'):>8}  {marker}")
+
+
+def _footer(min_edge: float) -> None:
     print("\nRegras aplicadas: recomendacao exige edge >= {:.0%} vs MELHOR preco, em".format(min_edge))
     print("zona confiavel (totais/empate) ou valor vs consenso do proprio mercado.")
     print("Vitoria de azarao pelo modelo NUNCA e' recomendada (vies de achatamento).")
     print("'JANELA VALIDADA' = gatilho do backtest (unico com CLV comprovado);")
-    print("registre a aposta com o comando impresso ANTES do jogo e feche com")
-    print("`python -m src.bet_log settle` no placar final (ROI/CLV reais).")
+    print("mercados de TEMPO sao [SEM CLV] — 'PICK >=60%' segue a regra da")
+    print("retro-analise (prob >=60% acertou 78%), aposte menor ou so registre.")
+    print("Feche tudo com `python -m src.bet_log settle HOME AWAY H A --ht H-A`.")
 
 
 def main() -> int:
@@ -247,6 +349,9 @@ def main() -> int:
     ap.add_argument("--jogo", help="filtra por nome de time (substring)")
     ap.add_argument("--min-edge", type=float, default=MIN_EDGE_DEFAULT)
     ap.add_argument("--from-file", help="JSON salvo da API (offline/teste)")
+    ap.add_argument("--tempos", action="store_true",
+                    help="inclui odds de 1o/2o tempo (totals_h1/h2 — 1 chamada "
+                         "de API POR JOGO; use com --jogo pra poupar quota)")
     args = ap.parse_args()
 
     if args.from_file:
@@ -268,7 +373,12 @@ def main() -> int:
     if not events:
         print("nenhum jogo com odds no momento.")
         return 0
-    analyze(events, args.jogo, args.min_edge)
+    tempos_key = os.environ.get("ODDS_API_KEY") if args.tempos else None
+    if args.tempos and not tempos_key:
+        print("[--tempos ignorado: ODDS_API_KEY nao definida — mercados de "
+              "tempo exigem o endpoint por evento]")
+    analyze(events, args.jogo, args.min_edge, tempos_key=tempos_key)
+    _footer(args.min_edge)
     return 0
 
 
