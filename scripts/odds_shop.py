@@ -291,10 +291,12 @@ def analyze(events: list, jogo_filter: str | None, min_edge: float,
                 if p_mod is not None:
                     edge_best = p_mod - 1.0 / d["best"][0]
                     if _BT_MIN < edge_best <= _BT_MAX:
+                        ko = ev.get("commence_time", "")
+                        ko_args = f" --date {ko[:10]} --kickoff {ko}" if ko else ""
                         print(f"      -> JANELA VALIDADA ({edge_best:+.1%}): "
                               f"python -m src.bet_log add \"{home}\" \"{away}\" ou25 "
                               f"{name.lower()} {d['best'][0]} --casa \"{d['best'][1]}\" "
-                              f"--edge {edge_best:.4f} --prob {p_mod:.4f}")
+                              f"--edge {edge_best:.4f} --prob {p_mod:.4f}{ko_args}")
 
         if tempos_key:
             _analyze_periods(ev, home, away, tempos_key)
@@ -332,10 +334,12 @@ def _analyze_periods(ev: dict, home: str, away: str, api_key: str) -> None:
                     edge_best = p_mod - 1.0 / d["best"][0]
                     if p_mod >= 0.60 and edge_best > 0:
                         mk_code = f"ou{str(ln).replace('.', '')}_{tag.lower()}"
+                        ko = ev.get("commence_time", "")
+                        ko_args = f" --kickoff {ko}" if ko else ""
                         marker = (f"PICK >=60% ({edge_best:+.1%}) — registrar: "
                                   f"python -m src.bet_log add \"{home}\" \"{away}\" "
                                   f"{mk_code} {name.lower()} {d['best'][0]} "
-                                  f"--casa \"{d['best'][1]}\"")
+                                  f"--casa \"{d['best'][1]}\"{ko_args}")
                 print(f"  {name + ' ' + str(ln):<12}{d['best'][0]:>11.2f}  "
                       f"{d['best'][1][:18]:<18}{d['consensus_prob']:>9.1%}"
                       f"{(f'{p_mod:.1%}' if p_mod is not None else '—'):>8}  {marker}")

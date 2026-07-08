@@ -65,25 +65,48 @@ def _append(rec: dict, path=None) -> None:
 
 
 def add_bet(home, away, market, selection, odds, *, book=None, stake=1.0,
-            model_prob=None, edge=None, match_date=None, note=None,
-            path=None, logged_at=None) -> dict:
+            model_prob=None, edge=None, match_date=None, kickoff=None,
+            note=None, path=None, logged_at=None) -> dict:
     """Registra a aposta ANTES do jogo. `market` em MARKETS; `selection` é o
     lado ('over'/'under'). `odds` é a odd DECIMAL tomada de fato (line shopping:
-    a melhor que você conseguiu, não a média)."""
+    a melhor que você conseguiu, não a média). `kickoff` = ISO-8601 UTC do
+    apito — habilita a contagem regressiva no `list` e o carimbo de
+    integridade: aposta registrada APÓS o kickoff é marcada late=True (o
+    edge 'pré-jogo' dela não vale e o CLV vira mentira)."""
     if market not in MARKETS:
         raise ValueError(f"mercado desconhecido: {market!r} — use um de {sorted(MARKETS)}")
     if odds <= 1.0:
         raise ValueError(f"odd decimal inválida: {odds}")
     line, period = MARKETS[market]
+    now_iso = logged_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    late = None
+    if kickoff:
+        try:
+            ko = datetime.fromisoformat(kickoff.replace("Z", "+00:00"))
+            now = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+            late = now >= ko
+        except ValueError:
+            kickoff, late = None, None       # kickoff ilegível: ignora, não trava
+    # aviso de bilhete duplicado: mesma partida+mercado+seleção ainda aberta
+    from .predict import _canon
+    target = frozenset((_canon(home), _canon(away)))
+    rows = _read(path)
+    settled = {r["bet_line_no"] for r in rows if r["kind"] == "settlement"}
+    dup = any(r["kind"] == "bet" and i not in settled
+              and frozenset((_canon(r["home"]), _canon(r["away"]))) == target
+              and r["market"] == market and r["selection"] == selection.lower()
+              for i, r in enumerate(rows))
     rec = {
-        "logged_at": logged_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "logged_at": now_iso,
         "kind": "bet", "status": "open",
         "home": home, "away": away, "match_date": match_date,
+        "kickoff": kickoff, "late": late,
         "market": market, "line": line, "period": period,
         "selection": selection.lower(),
         "odds": float(odds), "book": book, "stake": float(stake),
         "model_prob": model_prob, "edge": edge, "note": note,
         "validated": market in VALIDATED,
+        "duplicate_of_open": dup,
     }
     _append(rec, path)
     return rec
@@ -119,6 +142,10 @@ def settle_bet(home, away, home_score, away_score, *, ht=None, path=None,
         ht = tuple(int(x) for x in ht.split("-", 1))
     total_ft = int(home_score) + int(away_score)
     total_ht = None if ht is None else int(ht[0]) + int(ht[1])
+    if total_ht is not None and total_ht > total_ft:
+        raise ValueError(f"placar do intervalo ({total_ht} gols) maior que o final "
+                         f"({total_ft}) — erro de digitação? dinheiro real exige "
+                         "placar certo")
     target = frozenset((_canon(home), _canon(away)))
     open_ids, settled_ids = {}, set()
     for i, r in enumerate(_read(path)):
@@ -248,6 +275,36 @@ def bank_state(bank_path=None, bets_path=None) -> dict | None:
     }
 
 
+def list_bets(path=None) -> list[dict]:
+    """Todas as apostas com status resolvido por linha: cada bet ganha
+    'result' (settlement casado por bet_line_no) ou None se aberta."""
+    rows = _read(path)
+    settles = {r["bet_line_no"]: r for r in rows if r["kind"] == "settlement"}
+    out = []
+    for i, r in enumerate(rows):
+        if r["kind"] != "bet":
+            continue
+        out.append({**r, "result": settles.get(i)})
+    return out
+
+
+def _countdown(kickoff: str | None) -> str:
+    """'em 3h12', 'em 2d 04h', 'EM ANDAMENTO/ENCERRADO' ou '' sem kickoff."""
+    if not kickoff:
+        return ""
+    try:
+        ko = datetime.fromisoformat(kickoff.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    delta = (ko - datetime.now(timezone.utc)).total_seconds()
+    if delta <= 0:
+        return "JÁ COMEÇOU"
+    d, rem = divmod(int(delta), 86400)
+    h, rem = divmod(rem, 3600)
+    m = rem // 60
+    return f"em {d}d {h:02d}h" if d else (f"em {h}h{m:02d}" if h else f"em {m}min")
+
+
 def summary(path=None) -> dict:
     """ROI e CLV acumulados por mercado (só apostas fechadas). A chave carrega
     o grupo: mercado validado (ou25) separado dos informativos — misturar os
@@ -286,7 +343,12 @@ def main():
     a.add_argument("--prob", type=float, dest="model_prob")
     a.add_argument("--edge", type=float)
     a.add_argument("--date", dest="match_date")
+    a.add_argument("--kickoff", help="ISO-8601 UTC do apito (habilita contagem "
+                                     "regressiva e o carimbo de aposta tardia)")
     a.add_argument("--nota", dest="note")
+
+    sub.add_parser("list", help="todas as apostas: abertas com contagem "
+                                "regressiva, fechadas com resultado")
 
     s = sub.add_parser("settle", help="fecha apostas do confronto no placar final")
     s.add_argument("home"); s.add_argument("away")
@@ -309,11 +371,52 @@ def main():
     if args.cmd == "add":
         rec = add_bet(args.home, args.away, args.market, args.selection, args.odds,
                       book=args.book, stake=args.stake, model_prob=args.model_prob,
-                      edge=args.edge, match_date=args.match_date, note=args.note)
+                      edge=args.edge, match_date=args.match_date,
+                      kickoff=args.kickoff, note=args.note)
         aviso = "" if rec["validated"] else "  [mercado SEM CLV validado]"
         print(f"registrada: {rec['selection']} {rec['line']} ({rec['period']}) "
               f"@ {rec['odds']} ({rec['book'] or 'casa nao informada'}) "
               f"stake {rec['stake']}u — {rec['home']} x {rec['away']}{aviso}")
+        if rec["late"]:
+            print("  ALERTA: registrada APÓS o kickoff — o edge pré-jogo desta "
+                  "aposta NÃO vale e ela ficou carimbada late=True no livro.")
+        if rec["duplicate_of_open"]:
+            print("  ALERTA: já existe aposta ABERTA idêntica (mesmo jogo/mercado/"
+                  "lado) — se foi sem querer, a exposição dobrou.")
+    elif args.cmd == "list":
+        st = bank_state()
+        unit = st["unit"] if st else None
+        bets = list_bets()
+        if not bets:
+            print("nenhuma aposta no livro ainda")
+            return
+        abertas = [b for b in bets if b["result"] is None]
+        fechadas = [b for b in bets if b["result"] is not None]
+        if abertas:
+            print(f"\n=== ABERTAS ({len(abertas)}) ===")
+            for b in abertas:
+                v = "VALID" if b.get("validated", b["market"] in VALIDATED) else "info "
+                money = f" = R$ {b['stake'] * unit:.0f}" if unit else ""
+                extra = " ".join(x for x in (
+                    _countdown(b.get("kickoff")) or (b.get("match_date") or ""),
+                    "[LATE]" if b.get("late") else "",
+                    "[DUP?]" if b.get("duplicate_of_open") else "") if x)
+                print(f"  [{v}] {b['home']} x {b['away']}: {b['selection']} "
+                      f"{b['line']} ({b.get('period', 'FT')}) @ {b['odds']} "
+                      f"{b['book'] or ''} | {b['stake']}u{money} | {extra}")
+        if fechadas:
+            print(f"\n=== FECHADAS ({len(fechadas)}) ===")
+            for b in fechadas:
+                r = b["result"]
+                res = "PUSH" if r["won"] is None else ("GANHOU" if r["won"] else "PERDEU")
+                money = f" = R$ {r['profit'] * unit:+.0f}" if unit else ""
+                clv = f" | CLV {r['clv_close']:+.1%}" if r.get("clv_close") is not None else ""
+                print(f"  [{res}] {b['home']} x {b['away']}: {b['selection']} "
+                      f"{b['line']} ({b.get('period', 'FT')}) @ {b['odds']} "
+                      f"-> {r['profit']:+.2f}u{money}{clv}")
+        if st:
+            print(f"\n  banca: R$ {st['balance']:.2f} | em jogo: {st['open_units']:.1f}u "
+                  f"= R$ {st['open_money']:.2f} | unidade R$ {st['unit']:.2f}")
     elif args.cmd == "settle":
         recs = settle_bet(args.home, args.away, args.home_score, args.away_score,
                           ht=args.ht)

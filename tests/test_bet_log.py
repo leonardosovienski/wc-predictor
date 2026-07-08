@@ -5,7 +5,7 @@ import json
 import pytest
 
 from src.bet_log import (add_bet, bank_flow, bank_init, bank_state,
-                         settle_bet, summary)
+                         list_bets, settle_bet, summary)
 
 
 def test_add_grava_linha_aberta(tmp_path):
@@ -121,6 +121,52 @@ def test_banca_deposito_saque_e_reinit(tmp_path):
     bank_init(1000.0, 20.0, path=bank)                 # reinit zera fluxos
     st = bank_state(bank_path=bank, bets_path=bets)
     assert st["balance"] == 1000.0 and st["flows"] == 0.0
+
+
+def test_kickoff_marca_aposta_tardia(tmp_path):
+    # dinheiro real: aposta registrada APÓS o apito não tem edge pré-jogo —
+    # fica carimbada late=True (o registro entra, mas marcado).
+    p = tmp_path / "bets.jsonl"
+    cedo = add_bet("A", "B", "ou25", "under", 2.0, path=p,
+                   kickoff="2026-07-09T20:00:00Z",
+                   logged_at="2026-07-09T18:00:00+00:00")
+    tarde = add_bet("A", "B", "ou25", "over", 2.0, path=p,
+                    kickoff="2026-07-09T20:00:00Z",
+                    logged_at="2026-07-09T20:05:00+00:00")
+    assert cedo["late"] is False
+    assert tarde["late"] is True
+    sem_ko = add_bet("A", "B", "ou15", "over", 2.0, path=p)
+    assert sem_ko["late"] is None                     # sem kickoff, sem juízo
+
+
+def test_aviso_de_bilhete_duplicado_aberto(tmp_path):
+    p = tmp_path / "bets.jsonl"
+    a = add_bet("A", "B", "ou25", "under", 2.0, path=p)
+    b = add_bet("B", "A", "ou25", "under", 2.1, path=p)   # mesmo jogo invertido
+    assert a["duplicate_of_open"] is False
+    assert b["duplicate_of_open"] is True
+    settle_bet("A", "B", 1, 0, path=p)                    # fecha as duas
+    c = add_bet("A", "B", "ou25", "under", 2.0, path=p)   # não há mais aberta
+    assert c["duplicate_of_open"] is False
+
+
+def test_settle_rejeita_ht_maior_que_final(tmp_path):
+    p = tmp_path / "bets.jsonl"
+    add_bet("A", "B", "ou05_1t", "over", 2.0, path=p)
+    with pytest.raises(ValueError):
+        settle_bet("A", "B", 1, 0, ht="2-1", path=p)      # 3 gols no HT, 1 no FT
+
+
+def test_list_bets_casa_aberta_e_fechada(tmp_path):
+    p = tmp_path / "bets.jsonl"
+    add_bet("A", "B", "ou25", "under", 2.0, path=p)
+    add_bet("C", "D", "ou25", "over", 2.0, path=p)
+    settle_bet("A", "B", 1, 0, path=p)
+    rows = list_bets(path=p)
+    by = {(r["home"], r["away"]): r for r in rows}
+    assert by[("A", "B")]["result"] is not None           # fechada
+    assert by[("A", "B")]["result"]["won"] is True
+    assert by[("C", "D")]["result"] is None               # aberta
 
 
 def test_banca_none_sem_init(tmp_path):
