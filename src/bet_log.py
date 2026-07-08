@@ -77,6 +77,9 @@ def add_bet(home, away, market, selection, odds, *, book=None, stake=1.0,
         raise ValueError(f"mercado desconhecido: {market!r} — use um de {sorted(MARKETS)}")
     if odds <= 1.0:
         raise ValueError(f"odd decimal inválida: {odds}")
+    if stake <= 0:
+        raise ValueError(f"stake inválido: {stake} — tem que ser positivo "
+                         "(stake negativo corrompe ROI e exposição)")
     line, period = MARKETS[market]
     now_iso = logged_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
     late = None
@@ -140,6 +143,9 @@ def settle_bet(home, away, home_score, away_score, *, ht=None, path=None,
     from .predict import _canon
     if isinstance(ht, str):
         ht = tuple(int(x) for x in ht.split("-", 1))
+    if int(home_score) < 0 or int(away_score) < 0 or \
+            (ht is not None and (int(ht[0]) < 0 or int(ht[1]) < 0)):
+        raise ValueError("placar negativo não existe — erro de digitação")
     total_ft = int(home_score) + int(away_score)
     total_ht = None if ht is None else int(ht[0]) + int(ht[1])
     if total_ht is not None and total_ht > total_ft:

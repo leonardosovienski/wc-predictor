@@ -27,6 +27,19 @@ def test_add_rejeita_mercado_e_odd_invalidos(tmp_path):
         add_bet("A", "B", "1x2", "home", 2.0, path=p)     # mercado sem CLV
     with pytest.raises(ValueError):
         add_bet("A", "B", "ou25", "over", 0.9, path=p)    # odd <= 1
+    with pytest.raises(ValueError):
+        add_bet("A", "B", "ou25", "over", 2.0, stake=-3, path=p)   # stake < 0
+    with pytest.raises(ValueError):
+        add_bet("A", "B", "ou25", "over", 2.0, stake=0, path=p)    # stake = 0
+
+
+def test_settle_rejeita_placar_negativo(tmp_path):
+    p = tmp_path / "bets.jsonl"
+    add_bet("A", "B", "ou25", "over", 2.0, path=p)
+    with pytest.raises(ValueError):
+        settle_bet("A", "B", -1, 0, path=p)
+    with pytest.raises(ValueError):
+        settle_bet("A", "B", 2, 1, ht="0--1", path=p)     # HT negativo via parse
 
 
 def test_settle_ganha_perde_e_nao_duplica(tmp_path):
