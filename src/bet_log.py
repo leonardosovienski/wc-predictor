@@ -80,6 +80,15 @@ def add_bet(home, away, market, selection, odds, *, book=None, stake=1.0,
     if stake <= 0:
         raise ValueError(f"stake inválido: {stake} — tem que ser positivo "
                          "(stake negativo corrompe ROI e exposição)")
+    # Trava OPT-IN (auditoria 2026-07-09): mercados sem CLV validado usam o
+    # mesmo stake das validadas por padrão (decisão do operador — o rodapé do
+    # odds_shop já sugere 'aposte menor'). Se o operador quiser impor o teto,
+    # seta BETLOG_MAX_INFO_STAKE (em unidades); sem a env var, nada muda.
+    cap = os.environ.get("BETLOG_MAX_INFO_STAKE")
+    if cap and market not in VALIDATED and float(stake) > float(cap):
+        raise ValueError(
+            f"stake {stake}u excede o teto de {cap}u para mercado SEM CLV "
+            f"validado ({market}) — teto definido em BETLOG_MAX_INFO_STAKE")
     line, period = MARKETS[market]
     now_iso = logged_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
     late = None
@@ -115,16 +124,22 @@ def add_bet(home, away, market, selection, odds, *, book=None, stake=1.0,
     return rec
 
 
-def _close_shin_prob(home, away, selection):
+def _close_shin_prob(home, away, selection, match_date=None):
     """Prob Shin de FECHAMENTO da seleção (sofascore_matches) — None se não há
-    odds do confronto no banco. Reusa _market_probs (aliases inclusos)."""
+    odds do confronto no banco. Reusa _market_probs (aliases inclusos).
+    `match_date` desambigua confrontos repetidos na base (W1: Argentina x
+    Canada tem edição 2024 E 2026 — sem a data o CLV podia usar o jogo errado)."""
     import sqlite3
+    import sys
     from .predict import _market_probs
     try:
         conn = sqlite3.connect(f"file:{ROOT / 'data' / 'matches.db'}?mode=ro", uri=True)
-        mk = _market_probs(conn, home, away)
+        mk = _market_probs(conn, home, away, match_date=match_date)
         conn.close()
-    except Exception:
+    except Exception as e:
+        # W7: engolir a causa escondia "banco corrompido" atrás de "sem odds"
+        print(f"[AVISO: CLV indisponível — falha ao ler matches.db: {e}]",
+              file=sys.stderr)
         return None
     if not mk or mk.get("p_over") is None:
         return None
@@ -178,7 +193,10 @@ def settle_bet(home, away, home_score, away_score, *, ht=None, path=None,
         # CLV de fechamento: só o ou25 tem odd de close no banco (linha 2.5)
         clv = None
         if bet["market"] == "ou25":
-            p_close = _close_shin_prob(bet["home"], bet["away"], bet["selection"])
+            # data da aposta (ou do kickoff) desambigua confronto repetido (W1)
+            bet_date = bet.get("match_date") or (bet.get("kickoff") or "")[:10] or None
+            p_close = _close_shin_prob(bet["home"], bet["away"], bet["selection"],
+                                       match_date=bet_date)
             clv = None if p_close is None else round(bet["odds"] * p_close - 1.0, 4)
         rec = {
             "recorded_at": recorded_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -251,9 +269,16 @@ def bank_state(bank_path=None, bets_path=None) -> dict | None:
     if init is None:
         return None
     unit = init["unit"]
+
+    # W3: comparar como datetime, não como string — lexicográfico funcionava
+    # por acidente (todos os registros usam o mesmo formato '+00:00'), mas um
+    # 'Z' de sufixo já inverteria a ordem ('Z' > '+').
+    def _ts(s):
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    init_at = _ts(init["at"])
     settles = sorted((r for r in _read(bets_path)
-                      if r["kind"] == "settlement" and r["recorded_at"] >= init["at"]),
-                     key=lambda r: r["recorded_at"])
+                      if r["kind"] == "settlement" and _ts(r["recorded_at"]) >= init_at),
+                     key=lambda r: _ts(r["recorded_at"]))
     profit_units = sum(r["profit"] for r in settles)
     # equity curve em dinheiro -> max drawdown (do pico ao vale)
     equity, peak, mdd = init["amount"] + flows, init["amount"] + flows, 0.0

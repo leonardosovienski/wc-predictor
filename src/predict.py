@@ -48,42 +48,71 @@ def _canon(name):
     return _ALIASES.get(n, n)
 
 
-def _market_probs(conn, name_a, name_b):
+def _market_probs(conn, name_a, name_b, match_date=None):
     """Procura odds entre os dois times no Sofascore (1X2 + Over/Under 2.5) e
     devolve odds cruas + probabilidades de mercado (Shin), orientadas a
     (name_a, name_b). None se não houver odds para o confronto.
 
+    W1 (auditoria 2026-07-09): a base contém confrontos REPETIDOS (ex.:
+    Argentina x Canada 2024 e 2026) e a versão antiga devolvia o primeiro
+    que casasse por nomes — o CLV do settle podia usar o fechamento de OUTRO
+    jogo. Agora: com `match_date`, exige |Δdias| <= 3 e fica com o mais
+    próximo (mesma defesa do backtest._find_odds); sem data, fica com o de
+    DATA MAIS RECENTE (determinístico; antes era ordem arbitrária do SQL).
+
     odds_* são as cruas (para o gatilho de EV vs preço, igual ao backtest:
     P_modelo > 1/odd — NÃO contra Shin, que só mede CLV depois do fato).
     p_* (Shin) ficam só como leitura da "probabilidade real" do mercado."""
+    from datetime import date
     try:
         rows = conn.execute(
-            "SELECT home_team, away_team, odds_home, odds_draw, odds_away, "
+            "SELECT date, home_team, away_team, odds_home, odds_draw, odds_away, "
             "odds_over, odds_under FROM sofascore_matches "
             "WHERE odds_home IS NOT NULL").fetchall()
     except Exception:
         return None
     na, nb = _canon(name_a), _canon(name_b)
-    for h, a, oh, od, oa, o_over, o_under in rows:
+    target = None
+    if match_date:
+        try:
+            target = date.fromisoformat(str(match_date)[:10])
+        except ValueError:
+            target = None                 # data ilegível: cai no modo sem data
+    best = None                           # (chave_de_desempate, linha)
+    for d, h, a, oh, od, oa, o_over, o_under in rows:
         if {_canon(h), _canon(a)} != {na, nb}:
             continue
-        if _canon(h) != na:              # reorienta pra (a, b) como pedido
-            oh, oa = oa, oh
-        from .math_utils import shin_probabilities
-        p1, _z1, over1 = shin_probabilities([oh, od, oa])
-        out = {
-            "odds_home": oh, "odds_draw": od, "odds_away": oa,
-            "p_home": float(p1[0]), "p_draw": float(p1[1]), "p_away": float(p1[2]),
-            "overround_1x2": over1,
-            "odds_over": None, "odds_under": None,
-            "p_over": None, "p_under": None, "overround_ou25": None,
-        }
-        if o_over and o_under:
-            p2, _z2, over2 = shin_probabilities([o_over, o_under])
-            out.update(odds_over=o_over, odds_under=o_under,
-                      p_over=float(p2[0]), p_under=float(p2[1]), overround_ou25=over2)
-        return out
-    return None
+        if target is not None:
+            try:
+                dd = abs((date.fromisoformat(str(d)[:10]) - target).days)
+            except (TypeError, ValueError):
+                continue
+            if dd > 3:
+                continue
+            key = -dd                     # menor distância vence
+        else:
+            key = str(d or "")            # mais recente vence
+        if best is None or key > best[0]:
+            best = (key, (h, oh, od, oa, o_over, o_under))
+    if best is None:
+        return None
+    h, oh, od, oa, o_over, o_under = best[1]
+    if _canon(h) != na:                  # reorienta pra (a, b) como pedido
+        oh, oa = oa, oh
+    from .math_utils import shin_probabilities
+    p1, _z1, over1 = shin_probabilities([oh, od, oa])
+    out = {
+        "odds_home": oh, "odds_draw": od, "odds_away": oa,
+        "p_home": float(p1[0]), "p_draw": float(p1[1]), "p_away": float(p1[2]),
+        "overround_1x2": over1,
+        "odds_over": None, "odds_under": None,
+        "p_over": None, "p_under": None, "overround_ou25": None,
+    }
+    if o_over and o_under:
+        p2, _z2, over2 = shin_probabilities([o_over, o_under])
+        out.update(odds_over=o_over, odds_under=o_under,
+                  p_over=float(p2[0]), p_under=float(p2[1]), overround_ou25=over2)
+    return out
 
 
 def show(name_a, name_b, elo, params, cfg, neutral, conn=None, match_date=None,
@@ -102,7 +131,8 @@ def show(name_a, name_b, elo, params, cfg, neutral, conn=None, match_date=None,
     adv = 0.0 if neutral else cfg["elo"]["home_advantage"]
     r = model.predict_match(elo[name_a], elo[name_b], params, adv,
                             max_goals=cfg["model"]["max_goals"])
-    mk = _market_probs(conn, name_a, name_b) if conn is not None else None
+    mk = _market_probs(conn, name_a, name_b, match_date=match_date) \
+        if conn is not None else None
 
     # OBRIGATÓRIO: congela o PACOTE COMPLETO da predição no momento em que é feita
     # (append-only). Falha ao gravar é avisada em alto e bom som, mas não derruba o serving.
