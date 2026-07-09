@@ -1,5 +1,7 @@
 # Dados de runtime (o v2 LÊ a produção read-only; nada de dado versionado)
-data/
+# ANCORADO na raiz: a regra não-ancorada 'data/' engolia o PACOTE de código
+# vendor/predictor_core/data/ (mesmo incidente do previsao-cripto, 2026-07-07)
+/data/
 *.db
 *.log
 events.jsonl
