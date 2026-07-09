@@ -62,13 +62,21 @@ SERVING_ALLOWLIST = {
     "src/simulator.py",           # leitor de serving
     "src/status.py",              # painel (leitura de contagens)
     "src/kernel_daemon.py",       # daemon de serving (v3)
+    "scripts/odds_shop.py",       # serving pre-jogo (le o Elo corrente de proposito)
+    "scripts/prever.py",          # CLI de serving (previsao completa / live)
+    "scripts/ci_check.py",        # este arquivo (regex da propria barreira)
 }
 
 # Divida conhecida da v3 (lookahead documentado): WARN, nao FAIL.
-# Remover daqui quando forem migrados para ratings_asof — nunca ampliar.
+# Remover daqui quando forem migrados para ratings_asof — nunca ampliar
+# com codigo NOVO. diag_zebra entrou quando a varredura foi ampliada a
+# scripts/ (W6, 2026-07-09): divida PRE-EXISTENTE que ficou visivel —
+# usa o Elo corrente pra avaliar jogos passados da propria Copa
+# (lookahead; conclusoes dele valem como diagnostico, nao como medida).
 KNOWN_DEBT = {
     "src/research/vorp_ridge.py",
     "src/research/survival_test.py",
+    "scripts/diag_zebra.py",
 }
 
 failures: list[str] = []
@@ -123,7 +131,11 @@ def check_current_elo_containment() -> None:
         r"TABLE\s+current_elo|UPDATE\s+current_elo|DELETE\s+FROM\s+current_elo",
         re.IGNORECASE)
     n = 0
-    for f in sorted((ROOT / "src").rglob("*.py")):
+    # W6 (auditoria 2026-07-09): scripts/ tambem entra no radar — odds_shop.py
+    # usava current_elo fora da varredura; um script de PESQUISA novo com o
+    # mesmo padrao passaria despercebido.
+    files = sorted((ROOT / "src").rglob("*.py")) + sorted((ROOT / "scripts").rglob("*.py"))
+    for f in files:
         rel = _rel(f)
         text = f.read_text(encoding="utf-8", errors="replace")
         if "current_elo" not in text and "load_elo" not in text:

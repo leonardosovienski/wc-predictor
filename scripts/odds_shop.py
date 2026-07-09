@@ -105,11 +105,33 @@ def devig_probs(prices: list[float]) -> list[float]:
     return [x / s for x in imp]
 
 
-def consensus(event: dict, market_key: str, point=None) -> dict:
+def _stale(bk: dict, max_stale_s: float | None) -> bool:
+    """Casa com feed velho (W5, auditoria 2026-07-09): o melhor preço via max()
+    incluía books com last_update congelado — preço fantasma que o operador
+    não consegue executar. Sem last_update no payload, mantém (não dá pra
+    julgar); max_stale_s None desliga o filtro (modo --from-file/offline,
+    onde TODO o snapshot é velho por definição)."""
+    if max_stale_s is None:
+        return False
+    lu = bk.get("last_update")
+    if not lu:
+        return False
+    try:
+        age = (datetime.now(timezone.utc)
+               - datetime.fromisoformat(lu.replace("Z", "+00:00"))).total_seconds()
+    except ValueError:
+        return False
+    return age > max_stale_s
+
+
+def consensus(event: dict, market_key: str, point=None,
+              max_stale_s: float | None = None) -> dict:
     """{selecao: {'best': (odd, casa), 'consensus_prob': float, 'n_books': int}}
     Consenso = mediana das probabilidades de-vigadas por casa."""
     per_book: dict = {}
     for bk in event.get("bookmakers", []):
+        if _stale(bk, max_stale_s):
+            continue
         for m in bk.get("markets", []):
             if m.get("key") != market_key:
                 continue
@@ -239,7 +261,8 @@ def _started(ev: dict) -> bool:
 
 
 def analyze(events: list, jogo_filter: str | None, min_edge: float,
-            tempos_key: str | None = None) -> None:
+            tempos_key: str | None = None,
+            max_stale_s: float | None = None) -> None:
     for ev in events:
         home, away = ev.get("home_team", "?"), ev.get("away_team", "?")
         if jogo_filter and jogo_filter.lower() not in f"{home} {away}".lower():
@@ -253,7 +276,7 @@ def analyze(events: list, jogo_filter: str | None, min_edge: float,
         if pm is None:
             print("  (times fora do Elo local — sem cruzamento com o modelo)")
 
-        h2h = consensus(ev, "h2h")
+        h2h = consensus(ev, "h2h", max_stale_s=max_stale_s)
         if h2h:
             print(f"  {'1X2':<12}{'melhor odd':>11}  {'casa':<18}{'consenso':>9}"
                   f"{'modelo':>8}  veredito")
@@ -272,7 +295,7 @@ def analyze(events: list, jogo_filter: str | None, min_edge: float,
                       f"{d['consensus_prob']:>9.1%}"
                       f"{(f'{p_mod:.1%}' if p_mod is not None else '—'):>8}  {v}")
 
-        tot = consensus(ev, "totals", point=2.5)
+        tot = consensus(ev, "totals", point=2.5, max_stale_s=max_stale_s)
         if tot:
             print(f"  {'Gols 2.5':<12}{'melhor odd':>11}  {'casa':<18}{'consenso':>9}"
                   f"{'modelo':>8}  veredito")
@@ -299,14 +322,15 @@ def analyze(events: list, jogo_filter: str | None, min_edge: float,
                               f"--edge {edge_best:.4f} --prob {p_mod:.4f}{ko_args}")
 
         if tempos_key:
-            _analyze_periods(ev, home, away, tempos_key)
+            _analyze_periods(ev, home, away, tempos_key, max_stale_s=max_stale_s)
 
 
 _PERIOD_MARKETS = (("totals_h1", "1T"), ("totals_h2", "2T"))
 _PERIOD_LINES = (0.5, 1.5, 2.5)
 
 
-def _analyze_periods(ev: dict, home: str, away: str, api_key: str) -> None:
+def _analyze_periods(ev: dict, home: str, away: str, api_key: str,
+                     max_stale_s: float | None = None) -> None:
     """Odds de 1T/2T (melhor preço + consenso) cruzadas com o modelo calibrado.
     SEM CLV validado — o marcador é 'PICK >=60%' (regra da retro-análise das
     oitavas: picks com prob >=60% acertaram 78%), nunca 'JANELA VALIDADA'."""
@@ -317,7 +341,7 @@ def _analyze_periods(ev: dict, home: str, away: str, api_key: str) -> None:
     for mkey, tag in _PERIOD_MARKETS:
         blocks = []
         for ln in _PERIOD_LINES:
-            c = consensus(data, mkey, point=ln)
+            c = consensus(data, mkey, point=ln, max_stale_s=max_stale_s)
             if c:
                 blocks.append((ln, c))
         if not blocks:
@@ -366,11 +390,19 @@ def main() -> int:
     ap.add_argument("--tempos", action="store_true",
                     help="inclui odds de 1o/2o tempo (totals_h1/h2 — 1 chamada "
                          "de API POR JOGO; use com --jogo pra poupar quota)")
+    ap.add_argument("--max-stale-min", type=float, default=15.0,
+                    help="descarta casa cujo last_update tem mais que N minutos "
+                         "(W5: feed congelado vira melhor preco fantasma). "
+                         "0 desliga. So vale no modo online; --from-file nunca "
+                         "filtra (snapshot e' velho por definicao). Default: 15")
     args = ap.parse_args()
 
+    max_stale_s = None
     if args.from_file:
         events = json.loads(Path(args.from_file).read_text(encoding="utf-8"))
     else:
+        if args.max_stale_min > 0:
+            max_stale_s = args.max_stale_min * 60.0
         key = os.environ.get("ODDS_API_KEY")
         if not key:
             print("ODDS_API_KEY nao definida.\n"
@@ -391,7 +423,8 @@ def main() -> int:
     if args.tempos and not tempos_key:
         print("[--tempos ignorado: ODDS_API_KEY nao definida — mercados de "
               "tempo exigem o endpoint por evento]")
-    analyze(events, args.jogo, args.min_edge, tempos_key=tempos_key)
+    analyze(events, args.jogo, args.min_edge, tempos_key=tempos_key,
+            max_stale_s=max_stale_s)
     _footer(args.min_edge)
     return 0
 
