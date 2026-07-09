@@ -75,6 +75,42 @@ class SignalPoint:
                 "— violaria integridade temporal")
 
 
+@dataclass(frozen=True)
+class PredictionPoint:
+    """Envelope do ciclo de vida de uma PREVISÃO: emissão → maturação → resultado.
+
+    O padrão existia implícito em dois consumidores (2026-07-09): o bet_log do
+    wc-predictor (logged_at → kickoff → settle) e o close_trial_sharpes do
+    previsao-cripto (previsão → D+horizonte → Sharpe por-trade). Este contrato
+    torna o ciclo explícito para que funções do core (query de maturação,
+    futuro ledger) operem sobre qualquer domínio.
+
+      predicted_at : quando a previsão foi emitida (o "logged_at").
+      matures_at   : quando o resultado se torna OBSERVÁVEL (kickoff+jogo,
+                     t+horizonte). Invariante: matures_at >= predicted_at —
+                     prever o que já maturou é lookahead, barrado na construção.
+      value        : o valor previsto (prob, score, classe) — opaco pro core.
+      metadata     : contexto de domínio (ativo, mercado, modelo). Opcional.
+
+    `is_mature(now)`: o resultado já é observável? É a query universal que os
+    dois consumidores reimplementavam ("o que já posso liquidar/fechar?")."""
+
+    predicted_at: datetime
+    matures_at: datetime
+    value: object
+    metadata: dict | None = None
+
+    def __post_init__(self) -> None:
+        if self.matures_at < self.predicted_at:
+            raise ValueError(
+                f"PredictionPoint inválido: matures_at ({self.matures_at.isoformat()}) "
+                f"anterior a predicted_at ({self.predicted_at.isoformat()}) — "
+                "previsão do já-observável é lookahead")
+
+    def is_mature(self, now: datetime) -> bool:
+        return now >= self.matures_at
+
+
 class DataProvider(abc.ABC):
     """Contrato que todo conector de mercado concreto implementa.
 

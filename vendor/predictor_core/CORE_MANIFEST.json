@@ -1,11 +1,11 @@
 {
   "files": {
-    "__init__.py": "191d6426937c5decf5c6d9b4c4f37d57e6077c6ebae45dbcb427ac66c68b4d9b",
+    "__init__.py": "a5db239c088d9273a07a00e2f9c71b46f6256754c95e95bd82b4604a7ac2610e",
     "data/__init__.py": "eed7ab53ead39e86ae94cb860cf27fbc9054a6213718dbdfadf69bc2c287b771",
     "data/aggregation.py": "c7296f174963cf7b8c920c8fb3a4942aa8039581d4a4e49714f2a855cd4f94c8",
     "data/asof.py": "4d570c58e6fe1e0e7b16947ba74bb3534f48679c171cebb6ca623d122b875911",
     "data/circuit_breaker.py": "89d278696ddfdbe78007577481beec05a666e42b4171ab5dd947d5338f522f8f",
-    "data/contracts.py": "50b5a91f1c7c750fdd6dcb7d9b88b30eab7536b8bef6f44611b8060ccc413dd3",
+    "data/contracts.py": "1c9216fed3045f17b9e9d386d4ad19dce2359dff1a929d038731c44e2046b1d3",
     "data/quality.py": "d3a2bada31ff80b69097245e881bdad51f3d8e4400c455cff526a31f33e4b07b",
     "data/router.py": "f2a022201a68d40170d8f8b2916905162008c32056d74a7bcbb60be64b13ea6d",
     "infra.py": "94adde98ec6b24d40fd07fb1fd44973266a2d9de3eb5429d0e8ff886600fec2d",
@@ -21,7 +21,7 @@
     "measurement/nullref.py": "5bb7396c78d87890cfb875466f9d6f9cd2052c7cb9a4bb18f73cedba0b91c4b5",
     "measurement/replay.py": "604f616b71c19355294540602d7ebe24991650038ed18f68c9feb59c12132e63",
     "measurement/stats.py": "35e7347cc60b17480ed6d7ee6c83b4d3a69b9e9ffe72642447a93b79e98e22a6",
-    "measurement/trials.py": "798ce4431e1dbfa45eac5536ffac46fe7e6b0824186985e127b6be7f2f7d7a9d",
+    "measurement/trials.py": "a5f69fde96976fdc846afba51385c49d20d384f9bdcec278306cb3031c33bbe2",
     "net.py": "fbe181af70f6bb8638d3506383fa355938b46e3b0c7d27b506d9fcbd6a115955",
     "obs.py": "fc498d0ae23e1a953b3e4b98b736608c512d4022edaac8d4ef9afbbceb217848",
     "replay.py": "e1dc512031df957135b76009287b134899740e1a4022ccf093cb993675bb3b34",
@@ -29,12 +29,12 @@
     "stats.py": "b3fea526ab0ba66f466ca36c0066d6fe8d09cc35c57a2aad0f38fccb788ae547",
     "testing/__init__.py": "ff0ec103e23416df244022c42a1b6c9f2252b6b3cab9343bcb320bd8543e56b9",
     "testing/coverage.py": "8bd65c661e8d86dce2f76701393f16e864b5494d6fd4797dfb064debfc45b783",
-    "testing/harness.py": "433b669a3807ba321b22b11ad58f4f30d2f3d9e01c94af5bf71cd0cfbebc7401",
+    "testing/harness.py": "3a43667ea908d3b3af49311651aaa00167f2d61f9875a0ad67214fb32dc51092",
     "testing/secrets.py": "768e979f3d9be68078a75df6c759957fe8e3c6efaf50d7468434a999bf2a5a1f",
     "testing/synth.py": "f0b9d0b1ef862e5d7dd2220489bb57412d09810f74b6e00e18f5ddad93fa1e76",
-    "VERSION": "2eab0097e3cb3529d002a523b6498e86b39201b104e2bb0af1e963f956d3f7ae"
+    "VERSION": "55f3e8ec64246f03cad8be58e64e3ab62b8df03f635433a319ce0b19b7dffe79"
   },
-  "aggregate": "5e88ab46d86ef432",
-  "synced_at": "2026-07-03T18:09:54+00:00",
-  "source_version": "1.0.1-ga-20260703"
+  "aggregate": "026f1f7b761440d9",
+  "synced_at": "2026-07-09T20:32:03+00:00",
+  "source_version": "1.1.0-ga-20260709"
 }

@@ -4,7 +4,15 @@ Um pipeline de avaliação que devolve NO-GO pode estar certo (não há edge) OU
 detectaria edge nenhum). O controle positivo distingue os dois: injeta um edge sintético
 e exige detecção (sensibilidade), depois injeta ruído e exige rejeição (especificidade).
 Sem passar nos dois, nenhum GO/NO-GO do pipeline significa coisa alguma.
+
+Integração com o Experiment Registry (2026-07-09): `attest_pipeline_power` roda o
+controle positivo E emite um ATESTADO em arquivo — o que `measurement.trials.
+register_trial` exige para aceitar uma trial NOVA. Arquivo (não flag em memória)
+porque o harness roda na suíte e o registro roda no pipeline: processos distintos.
 """
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 
 
 class PipelineHasNoPowerError(AssertionError):
@@ -38,3 +46,28 @@ def assert_pipeline_has_power(evaluate_func, edge_generator, noise_generator,
             f"ESPECIFICIDADE falhou: ruído confirmado como edge "
             f"(verdict={got_noise!r}) — pipeline fabrica significância.")
     return True
+
+
+def attest_pipeline_power(evaluate_func, edge_generator, noise_generator,
+                          *, attestation_path: Path | str, note: str = "",
+                          edge_verdict: str = "COMPROVADA",
+                          null_verdict: str = "REFUTADA") -> dict:
+    """Roda o controle positivo e, PASSANDO, emite o atestado que destrava a
+    criação de trials novas no Experiment Registry (measurement.trials).
+
+    `attestation_path`: onde gravar — use `trials.attestation_path_for(trials_json)`
+    para o local canônico (irmão do trials.json). Falhando o controle, levanta
+    PipelineHasNoPowerError e NÃO grava nada. Retorna o dict do atestado."""
+    assert_pipeline_has_power(evaluate_func, edge_generator, noise_generator,
+                              edge_verdict=edge_verdict, null_verdict=null_verdict)
+    record = {
+        "passed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "evaluate": getattr(evaluate_func, "__name__", repr(evaluate_func)),
+        "edge_verdict": edge_verdict,
+        "note": note,
+    }
+    ap = Path(attestation_path)
+    ap.parent.mkdir(parents=True, exist_ok=True)
+    ap.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n",
+                  encoding="utf-8")
+    return record

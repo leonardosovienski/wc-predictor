@@ -25,13 +25,15 @@ from predictor_core.measurement.metrics import (
     brier, log_loss, rps, calibration_table, diebold_mariano,
 )
 from predictor_core.measurement.trials import (
-    TrialRegistry, register_trial, load_trials, deflated_sharpe_ratio,
+    TrialRegistry, register_trial, load_trials, validate_trials,
+    deflated_sharpe_ratio, attestation_path_for, PowerAttestationMissingError,
 )
 from predictor_core.measurement.nullref import (
     null_distribution, tail_probability, percentile_of, random_portfolio_sequence,
 )
 from predictor_core.measurement.replay import replay, PastView, LookaheadError
 from predictor_core.data.asof import state_asof
+from predictor_core.data.contracts import PredictionPoint
 
 __all__ = [
     "__version__",
@@ -48,12 +50,13 @@ __all__ = [
     "bootstrap_ci", "block_bootstrap_ci", "ci_mean",
     # measurement — probabilística
     "brier", "log_loss", "rps", "calibration_table", "diebold_mariano",
-    # measurement — trials/DSR
-    "TrialRegistry", "register_trial", "load_trials", "deflated_sharpe_ratio",
+    # measurement — trials/DSR (+ governança reconciliada 2026-07-09)
+    "TrialRegistry", "register_trial", "load_trials", "validate_trials",
+    "deflated_sharpe_ratio", "attestation_path_for", "PowerAttestationMissingError",
     # measurement — referência nula (3ª lente)
     "null_distribution", "tail_probability", "percentile_of", "random_portfolio_sequence",
     # measurement — replay
     "replay", "PastView", "LookaheadError",
-    # data — estado as-of
-    "state_asof",
+    # data — estado as-of + contrato do ciclo previsão→maturação
+    "state_asof", "PredictionPoint",
 ]
