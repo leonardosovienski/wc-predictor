@@ -1,3 +1,11 @@
+> ## 📌 ESTADO ATUAL (2026-07-09) — fonte da verdade: HANDOFF.md
+>
+> Operando **dinheiro real** nas quartas da Copa 2026 (banca R$ 1.067,50 após 2/2
+> na estreia; livro em `python -m src.bet_log list`). Suíte: **234 verdes**, CI 5/5
+> (`scripts/ci_check.py`). Vendor no predictor_core **v1.1.0**. As contagens e
+> conclusões dos banners históricos abaixo valem como REGISTRO da época — o estado
+> corrente vive no HANDOFF.md e na memória da sessão.
+
 > ## ⚠️ CORREÇÃO DE AUDITORIA (2026-07-02) — LEIA ANTES DAS CONCLUSÕES ABAIXO
 >
 > Auditoria independente encontrou e corrigiu bugs que **invalidam parte das

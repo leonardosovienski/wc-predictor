@@ -1,3 +1,36 @@
+> ## 💰 QUARTAS COM DINHEIRO REAL + AUDITORIA CRUZADA (2026-07-08/09)
+>
+> **Banca real aberta (def4c4a, 08/07)**: R$ 1.000, unidade R$ 50 (5% — acima do
+> teto conservador de 2%, escolha consciente do operador; o painel avisa sempre).
+> `python -m src.bet_log banca` / `list` / `settle` / `summary`. Livro append-only
+> (`data/bets.jsonl` + `bankroll.jsonl`) com carimbo de aposta tardia, alerta de
+> duplicata, HT>FT rejeitado, stake/placar negativos rejeitados (teste de fogo 08/07).
+>
+> **Primeira rodada liquidada (09/07)**: France 2x0 Morocco (HT 0-0) → **2/2 GANHAS,
+> +R$ 67,50** (Under 2.5 @1.93 +0.93u, CLV −3,5%; Under 1.5 1T @1.42 +0.42u,
+> informativa). Banca R$ 1.067,50; 3 apostas vivas (Spain-Belgium, Norway-England,
+> Argentina-Switzerland). Regra inegociável: só O/U 2.5 tem CLV comprovado
+> (+16,11% na população open); períodos = informativos com prob ≥60%; 1X2 nunca.
+>
+> **Auditoria cruzada (09/07, commits f413eec→6a14406)**: (1) bug do `data/`
+> não-ancorado no .gitignore estava VIVO — engolia `vendor/predictor_core/data/`
+> (7 .py do manifesto; clone fresco quebraria); corrigido + `test_repo_hygiene.py`
+> portado do previsao-cripto. (2) W1: `_market_probs` casava odds só por nomes e a
+> base tem confrontos repetidos (Argentina×Canada 2024/2026) — o CLV do settle podia
+> usar o jogo errado; agora filtra por data ±3d (settle passa match_date/kickoff).
+> (3) W5: odds_shop descarta casa com `last_update` >15min (feed morto = melhor
+> preço fantasma; `--max-stale-min`). (4) W3/W6/W7: timestamps como datetime,
+> barreira P3 varre scripts/ (diag_zebra virou dívida WARN), CLV loga causa de
+> falha. (5) Trava opt-in `BETLOG_MAX_INFO_STAKE` (env var) limita stake de mercado
+> sem CLV. **Suíte: 234 verdes, CI 5/5.**
+>
+> **Vendor no core v1.1.0** (registry com governança N+1 + trava de poder +
+> `PredictionPoint`): nada consumido ainda — a adoção do TrialRegistry + harness
+> (edge sintético: inflar λ e exigir detecção no funil O/U) é o passo OBRIGATÓRIO
+> antes da melhoria do 2T condicionado ao HT (pós-Copa). Pendências: W2 (bet_id
+> uuid no livro — schema aditivo, fazer entre jogos), `cron_update_models` quando
+> o placar das quartas entrar em `matches` (antes das SEMIS).
+
 > ## 🔗 ONDA 5 (2026-07-03) — reintegração ao predictor_core (DESPARKADO)
 >
 > O wc-predictor-v2 agora **consome o predictor_core via vendor** (`vendor/predictor_core/`,
