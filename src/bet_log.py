@@ -16,6 +16,7 @@ o preço de fechamento, o único preditor confiável de lucro no longo prazo.
 """
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -66,7 +67,7 @@ def _append(rec: dict, path=None) -> None:
 
 def add_bet(home, away, market, selection, odds, *, book=None, stake=1.0,
             model_prob=None, edge=None, match_date=None, kickoff=None,
-            note=None, path=None, logged_at=None) -> dict:
+            note=None, path=None, logged_at=None, bet_id=None) -> dict:
     """Registra a aposta ANTES do jogo. `market` em MARKETS; `selection` é o
     lado ('over'/'under'). `odds` é a odd DECIMAL tomada de fato (line shopping:
     a melhor que você conseguiu, não a média). `kickoff` = ISO-8601 UTC do
@@ -109,6 +110,13 @@ def add_bet(home, away, market, selection, odds, *, book=None, stake=1.0,
               and r["market"] == market and r["selection"] == selection.lower()
               for i, r in enumerate(rows))
     rec = {
+        # W2 (auditoria 2026-07-09, fechado 2026-07-11): identificador ÚNICO da
+        # aposta — schema ADITIVO: apostas antigas não têm a chave e o vínculo
+        # legado por bet_line_no segue sendo a fonte da liquidação; o bet_id é
+        # a rastreabilidade que sobrevive a qualquer contexto fora do arquivo
+        # (planilha do operador, telemetria, futuro Ledger do core).
+        # `bet_id` injetável para teste determinístico.
+        "bet_id": bet_id or str(uuid.uuid4()),
         "logged_at": now_iso,
         "kind": "bet", "status": "open",
         "home": home, "away": away, "match_date": match_date,
@@ -201,6 +209,8 @@ def settle_bet(home, away, home_score, away_score, *, ht=None, path=None,
         rec = {
             "recorded_at": recorded_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "kind": "settlement", "bet_line_no": line_no,
+            # W2: carimba o id da aposta fechada (None = aposta legada pré-W2)
+            "bet_id": bet.get("bet_id"),
             "home": bet["home"], "away": bet["away"],
             "score": f"{home_score}-{away_score}",
             "ht": None if ht is None else f"{ht[0]}-{ht[1]}",
@@ -405,8 +415,9 @@ def main():
                       edge=args.edge, match_date=args.match_date,
                       kickoff=args.kickoff, note=args.note)
         aviso = "" if rec["validated"] else "  [mercado SEM CLV validado]"
-        print(f"registrada: {rec['selection']} {rec['line']} ({rec['period']}) "
-              f"@ {rec['odds']} ({rec['book'] or 'casa nao informada'}) "
+        print(f"registrada [{rec['bet_id'][:8]}]: {rec['selection']} {rec['line']} "
+              f"({rec['period']}) @ {rec['odds']} "
+              f"({rec['book'] or 'casa nao informada'}) "
               f"stake {rec['stake']}u — {rec['home']} x {rec['away']}{aviso}")
         if rec["late"]:
             print("  ALERTA: registrada APÓS o kickoff — o edge pré-jogo desta "
