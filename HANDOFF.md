@@ -1,3 +1,38 @@
+> ## 🎫 SPAIN×BELGIUM LIQUIDADO + REVALIDAÇÃO COMPLETA + BETMGM (2026-07-10)
+>
+> **Revalidação comando-a-comando (manhã)**: checklist de 9 itens executado de
+> verdade — CI 234/5-5 (3 WARNs conhecidos), higiene 6/6 (core v1.1.0), serving
+> (1X2 soma 100%, live 1T/2T ok), livro-caixa exercitado em arquivos TEMP via env
+> vars (todas as rejeições, late=True, duplicata, push em linha inteira via API,
+> BETLOG_MAX_INFO_STAKE), painel real batendo ao centavo, odds via --from-file
+> (nunca filtra frescor), aferição com orientação invertida ok, backtest regrava
+> ledger. Zero chamada de API gasta na validação. **Veredito: apto às semis.**
+> Nota: `sync_core --check` NÃO existe neste repo (mora no core upstream); o
+> equivalente local é test_core_integrity.
+>
+> **FATO NOVO — casa real do operador é a BetMGM** (memória gravada): o line
+> shopping é só referência; a odd REGISTRADA tem que ser a executada na BetMGM.
+> As 4 apostas das quartas tinham sido registradas com odds de casas que o Leo
+> não usa (Coolbet/BetOnline/NordicBet) — a de hoje foi corrigida no livro; as
+> DUAS ABERTAS (Norway-England @2.21 "BetOnline", Argentina-Switzerland @2.30
+> "NordicBet") ainda precisam da MESMA correção quando ele executar na BetMGM —
+> perguntar odd real ANTES do apito.
+>
+> **Spain 2x1 Belgium (HT 1-1) liquidado**: Under 2.5 FT @2.15 BetMGM PERDEU
+> (−1u, mas **CLV +1.53%** — processo certo, variância) + Under 1.5 1T @1.40
+> BetMGM 0.5u PERDEU (−0.5u; pick ≥60%, modelo 74.8%). Dia: **−R$ 75**. Banca:
+> **R$ 992,50** (−0.15u total, 4 fechadas, 2u em jogo). Aferição: 10 jogos,
+> winner 6/10, ou25 4/10. Fechamento capturado pré-jogo via ingest_sofascore
+> 15h08 BRT (Under @2.00, pre_match=1). Quota Odds API: 412 restantes.
+>
+> **Pendências pra próxima sessão**: (1) W2 bet_id de manhã entre jogos;
+> (2) cron_update_models quando o 2x1 entrar em matches (antes das SEMIS —
+> placeholder France×W98 14/07 já está no banco, W98 = Spain);
+> (3) Norway×England 11/07 18h00 BRT: ingest_sofascore perto do apito, conferir
+> odd BetMGM, corrigir livro com a odd real, settle duplo pós-jogo;
+> (4) expectativa honesta dada ao operador: ~7 bilhetes restantes na Copa,
+> EV ~R$ 20-40 — volume real só pós-Copa com mais ligas (backtest + registry).
+
 > ## 💰 QUARTAS COM DINHEIRO REAL + AUDITORIA CRUZADA (2026-07-08/09)
 >
 > **Banca real aberta (def4c4a, 08/07)**: R$ 1.000, unidade R$ 50 (5% — acima do
