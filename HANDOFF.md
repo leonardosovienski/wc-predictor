@@ -420,3 +420,25 @@ O que não funciona: O modelo 1X2 perde dinheiro (CLV -15%). O edge em corners �
 Uso legítimo: Referência de probabilidade (Shin), sanity‑check contra o mercado, simulação de torneio com viés conhecido.
 
 Próxima ação (se houver): Expandir cobertura de dados (Eliminatórias, Nations League) para testar se o sinal em corners aumenta com amostra maior — mas isso é pesquisa adicional, não correção.
+
+## 2026-07-11 — Oportunidade identificada: modelo de intervalo
+
+**Contexto:** Norway 1×1 England (quartas de final). No pré‑jogo, o modelo indicava
+Under 2.5 FT (edge +7,2%, confiança ALTA) e Under 1.5 1T (confiança 75,5%). Ambos
+os picks foram lucrativos (+1,41u combinado).
+
+**Observação:** No intervalo (1×0), a odd para o Under 2.5 e para o Under 1.5 do
+segundo tempo disparou (o mercado passou a temer mais gols na etapa final). Se o
+modelo tivesse uma segunda entrada ali, o retorno teria sido 5–6× maior. O
+`prever.py --segundo-tempo` calculou corretamente as probabilidades condicionais,
+mas não há backtest para apostas in‑play — qualquer entrada no intervalo seria
+fora do protocolo.
+
+**Encaminhamento:** Registrada como candidata a H6 no backlog. Para se tornar uma
+hipótese testável, será necessário:
+- Uma série histórica de placares de intervalo + odds ao vivo (fonte a definir).
+- Um backtest walk‑forward que simule entradas no intervalo com stake controlado.
+- Registro no `TrialRegistry` e validação com DSR.
+
+Até lá, o `prever.py --segundo-tempo` segue como ferramenta informativa, sem
+capacidade de gerar apostas reais.
