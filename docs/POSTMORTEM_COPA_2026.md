@@ -52,10 +52,13 @@ Convenção usada em TODO o mata-mata: aferição e liquidação pelo **placar d
 
 ## 3. P&L real parcial (fotografia de 2026-07-16)
 
-`python -m src.bet_log banca`: saldo **R$ 908,00** (inicial R$ 1.000, unidade R$ 50),
-**−1,84u = −R$ 92,00** em 9 apostas fechadas, 0 abertas. Drawdown máximo R$ 200
-(placar exato França×Espanha, stake 4u — decisão do operador sem edge pré-calculado).
-Casa real de execução: BetMGM (odds registradas = as executadas, não as do line shopping).
+`python -m src.bet_log banca`: saldo **R$ 708,00** (inicial R$ 1.000, unidade R$ 50),
+**−5,84u = −R$ 292,00** em 10 apostas fechadas, 0 abertas. Drawdown máximo R$ 400 —
+dois bilhetes de R$ 200 (4u) perdidos em sequência: placar exato 1×1 França×Espanha
+@5.00 (sem edge pré-calculado) e SGP Empate+Under 2.5 England×Argentina @5.10 (este
+**+EV pelo modelo**: P(0-0)+P(1-1) = 21,94% da grade congelada, odd justa 4.56,
+EV +11,9% — processo certo, variância; 90min 1-2). Casa real de execução: BetMGM
+(odds registradas = as executadas, não as do line shopping).
 
 ## 4. Incidentes de integridade a reportar no relatório final
 
