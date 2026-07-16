@@ -130,10 +130,17 @@ def validate_trials(trials: list[dict]) -> list[str]:
     return errs
 
 
+class MetricMismatchError(PowerAttestationMissingError):
+    """A trial declara uma métrica diferente da atestada pelo harness — o
+    controle positivo que passou não cobre o veredito que será emitido
+    (ex.: harness atestado com Brier, trial avaliada por RPS)."""
+
+
 def register_trial(name: str, *, params: dict, sharpe: float | None = None,
                    notes: str = "", path: Path | str | None = None,
                    now: str | None = None,
                    power_attestation: Path | str | bool | None = None,
+                   metric: str | None = None,
                    **extra) -> list[dict]:
     """Registra (ou atualiza) uma tentativa. `name` é a identidade da CONFIGURAÇÃO.
 
@@ -148,6 +155,11 @@ def register_trial(name: str, *, params: dict, sharpe: float | None = None,
     caminho = usa esse arquivo; False = bypass EXPLÍCITO (só para teste de
     mecânica do registro — nunca em pesquisa real).
 
+    Punição global (v1.3.0): se `metric` for informada (ex.: "brier", "rps"),
+    o atestado precisa declarar a MESMA métrica — atestado emitido com outra
+    métrica (ou sem métrica) levanta MetricMismatchError: o controle positivo
+    que passou não cobre o veredito que a trial vai emitir.
+
     `now` injetável para teste determinístico. `extra` aceita os campos
     opcionais do schema (features_used, train_period, test_period). Valida o
     schema ANTES de gravar. Retorna a lista completa após a escrita."""
@@ -156,6 +168,8 @@ def register_trial(name: str, *, params: dict, sharpe: float | None = None,
     stamp = now or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     entry = {"name": name, "registered_at": stamp, "params": params,
              "sharpe": sharpe, "notes": notes, **extra}
+    if metric is not None:
+        entry["metric"] = metric
     for i, t in enumerate(trials):
         if t.get("name") == name:
             if t.get("params") != params:
@@ -175,6 +189,15 @@ def register_trial(name: str, *, params: dict, sharpe: float | None = None,
                     f"({att}) — rode testing.harness.attest_pipeline_power "
                     "para provar que o pipeline detecta edge plantado e "
                     "rejeita ruído, ANTES de registrar tentativas.")
+            if metric is not None:
+                attested = json.loads(att.read_text(encoding="utf-8")).get("metric", "")
+                if attested != metric:
+                    raise MetricMismatchError(
+                        f"trial nova '{name}' declara metric={metric!r} mas o "
+                        f"atestado ({att}) foi emitido com metric={attested!r} — "
+                        "o controle positivo que passou não cobre esse veredito. "
+                        "Reate o harness com a métrica correta "
+                        "(attest_pipeline_power(..., metric=...)).")
         trials.append(entry)
     errs = validate_trials(trials)
     if errs:
@@ -229,10 +252,12 @@ class TrialRegistry:
     def register(self, name: str, *, params: dict, sharpe: float | None = None,
                  notes: str = "", now: str | None = None,
                  power_attestation: Path | str | bool | None = None,
+                 metric: str | None = None,
                  **extra) -> list[dict]:
         return register_trial(name, params=params, sharpe=sharpe, notes=notes,
                               path=self.path, now=now,
-                              power_attestation=power_attestation, **extra)
+                              power_attestation=power_attestation,
+                              metric=metric, **extra)
 
     def load(self) -> list[dict]:
         return load_trials(self.path)

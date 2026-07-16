@@ -99,6 +99,25 @@ def is_transient(exc: Exception) -> bool:
     return any(m in msg for m in TRANSIENT_MARKERS)
 
 
+def get_impersonating_session(impersonate: str = "chrome"):
+    """Sessão HTTP com fingerprint de navegador (curl_cffi) para fontes que
+    bloqueiam clientes programáticos por TLS fingerprinting (HLTV, SofaScore).
+
+    Padrão LAZY (v1.3.0): curl_cffi só é importado AQUI — consumidores que
+    nunca raspam essas fontes (stocks offline, websockets locais) vendorizam
+    este módulo sem precisar da dependência instalada. Se curl_cffi estiver
+    ausente, o erro diz exatamente o que instalar e por quê."""
+    try:
+        from curl_cffi import requests as _cffi_requests
+    except ImportError as exc:
+        raise ImportError(
+            "curl_cffi não instalado — necessário SOMENTE para fontes com "
+            "TLS fingerprinting (HLTV/SofaScore). Consumidores que não raspam "
+            "essas fontes não precisam dele. Instale: pip install curl_cffi"
+        ) from exc
+    return _cffi_requests.Session(impersonate=impersonate)
+
+
 def with_retry(attempts: int = 4, base_delay: float = 2.0, max_delay: float = 30.0):
     """Decorator para corotinas: reexecuta em erro transitório com backoff exp + jitter."""
     def decorator(fn):

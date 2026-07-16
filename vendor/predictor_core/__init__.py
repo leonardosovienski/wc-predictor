@@ -27,11 +27,20 @@ from predictor_core.measurement.metrics import (
 from predictor_core.measurement.trials import (
     TrialRegistry, register_trial, load_trials, validate_trials,
     deflated_sharpe_ratio, attestation_path_for, PowerAttestationMissingError,
+    MetricMismatchError,
 )
+from predictor_core.measurement.calibration import PlattCalibrator, shin_devig
+from predictor_core.kernel.timeindex import utcnow, to_utc, iso_z, parse_iso, NaiveDatetimeError
+from predictor_core.kernel.jsonl_store import JsonlStore
+from predictor_core.testing.prequential import PrequentialEvaluator
 from predictor_core.measurement.nullref import (
     null_distribution, tail_probability, percentile_of, random_portfolio_sequence,
 )
 from predictor_core.measurement.replay import replay, PastView, LookaheadError
+from predictor_core.measurement.ledger import Posting, Transaction, Ledger, UnbalancedTransactionError
+from predictor_core.measurement.ordinal import plackett_luce_prob, fit_plackett_luce, rank_probabilities
+from predictor_core.kernel.rating import Entity, expected_score, update_pair, RatingBook
+from predictor_core.testing.stress import check_property, floats, integers, lists_of, PropertyFailure
 from predictor_core.data.asof import state_asof
 from predictor_core.data.contracts import PredictionPoint
 
@@ -57,6 +66,18 @@ __all__ = [
     "null_distribution", "tail_probability", "percentile_of", "random_portfolio_sequence",
     # measurement — replay
     "replay", "PastView", "LookaheadError",
+    # measurement — ledger (partida dobrada, agosto/2026)
+    "Posting", "Transaction", "Ledger", "UnbalancedTransactionError",
+    # measurement — camada ordinal (Plackett-Luce, agosto/2026)
+    "plackett_luce_prob", "fit_plackett_luce", "rank_probabilities",
+    # kernel — EloEngine generalizado (agosto/2026)
+    "Entity", "expected_score", "update_pair", "RatingBook",
+    # testing — telemetria de estresse property-based (agosto/2026)
+    "check_property", "floats", "integers", "lists_of", "PropertyFailure",
+    # v1.3.0 — estado definitivo: calibração, tempo, JSONL, prequential, punição global
+    "PlattCalibrator", "shin_devig",
+    "utcnow", "to_utc", "iso_z", "parse_iso", "NaiveDatetimeError",
+    "JsonlStore", "PrequentialEvaluator", "MetricMismatchError",
     # data — estado as-of + contrato do ciclo previsão→maturação
     "state_asof", "PredictionPoint",
 ]

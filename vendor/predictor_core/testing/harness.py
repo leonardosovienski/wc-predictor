@@ -51,13 +51,19 @@ def assert_pipeline_has_power(evaluate_func, edge_generator, noise_generator,
 def attest_pipeline_power(evaluate_func, edge_generator, noise_generator,
                           *, attestation_path: Path | str, note: str = "",
                           edge_verdict: str = "COMPROVADA",
-                          null_verdict: str = "REFUTADA") -> dict:
+                          null_verdict: str = "REFUTADA",
+                          metric: str = "") -> dict:
     """Roda o controle positivo e, PASSANDO, emite o atestado que destrava a
     criação de trials novas no Experiment Registry (measurement.trials).
 
     `attestation_path`: onde gravar — use `trials.attestation_path_for(trials_json)`
     para o local canônico (irmão do trials.json). Falhando o controle, levanta
-    PipelineHasNoPowerError e NÃO grava nada. Retorna o dict do atestado."""
+    PipelineHasNoPowerError e NÃO grava nada. Retorna o dict do atestado.
+
+    `metric` (v1.3.0, punição global): nome da métrica que o pipeline atestado
+    usa (ex.: "brier" para binário, "rps" para ordinal). Vai no atestado; o
+    registry pode então exigir que a trial declare a MESMA métrica — um
+    pipeline atestado com Brier não cobre vereditos emitidos com RPS."""
     assert_pipeline_has_power(evaluate_func, edge_generator, noise_generator,
                               edge_verdict=edge_verdict, null_verdict=null_verdict)
     record = {
@@ -65,6 +71,7 @@ def attest_pipeline_power(evaluate_func, edge_generator, noise_generator,
         "evaluate": getattr(evaluate_func, "__name__", repr(evaluate_func)),
         "edge_verdict": edge_verdict,
         "note": note,
+        "metric": metric,
     }
     ap = Path(attestation_path)
     ap.parent.mkdir(parents=True, exist_ok=True)
