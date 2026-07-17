@@ -49,6 +49,7 @@ class CircuitBreaker:
         self._state = self.CLOSED
         self._failures = 0
         self._opened_at = 0.0
+        self._probe_released = False  # HALF_OPEN libera UMA sonda por vez
 
     # --- estado -------------------------------------------------------------
 
@@ -70,15 +71,23 @@ class CircuitBreaker:
 
     def can_attempt(self) -> bool:
         """True se a chamada pode prosseguir agora. OPEN dentro do timeout → False;
-        passado o timeout, transiciona a HALF_OPEN e libera UMA sonda."""
+        passado o timeout, transiciona a HALF_OPEN e libera UMA sonda — chamadas
+        seguintes em HALF_OPEN retornam False até record_success/record_failure
+        resolver a sonda em voo (senão N chamadas concorrentes bombardeariam a
+        fonte convalescente de uma vez)."""
         if self._state == self.CLOSED:
             return True
         if self._state == self.OPEN:
             if (self._clock() - self._opened_at) >= self.reset_timeout:
                 self._transition(self.HALF_OPEN)
+                self._probe_released = True
                 return True
             return False
-        return True  # HALF_OPEN: permite a sonda
+        # HALF_OPEN: uma sonda por vez
+        if self._probe_released:
+            return False
+        self._probe_released = True
+        return True
 
     # Alias de compatibilidade com o consumidor da dpl (router).
     def allow(self) -> bool:
@@ -86,11 +95,13 @@ class CircuitBreaker:
 
     def record_success(self) -> None:
         self._failures = 0
+        self._probe_released = False
         if self._state != self.CLOSED:
             self._transition(self.CLOSED)
 
     def record_failure(self) -> None:
         self._failures += 1
+        self._probe_released = False
         # Falha durante a sonda (HALF_OPEN) OU ao atingir o limiar → abre.
         if self._state == self.HALF_OPEN or self._failures >= self.failure_threshold:
             self._opened_at = self._clock()

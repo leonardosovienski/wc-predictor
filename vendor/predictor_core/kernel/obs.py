@@ -7,6 +7,7 @@ metadata) — invariante por máquina, não por disciplina.
 """
 import json
 import logging
+import math
 import os
 import sys
 from datetime import datetime, timezone
@@ -56,6 +57,13 @@ def emit_event(domain: str, event: str, *, run_id: str | None = None,
     if nao_numericos:
         raise TypeError(f"emit_event: 'metrics' aceita só números; não-numéricos: "
                         f"{nao_numericos} — use 'metadata' para contexto não-numérico")
+    # NaN/inf não existem em JSON (RFC 8259): json.dumps os emitiria como literais
+    # que parsers estritos rejeitam — a linha inteira da telemetria viraria lixo.
+    nao_finitos = [k for k, v in metrics.items()
+                   if isinstance(v, float) and not math.isfinite(v)]
+    if nao_finitos:
+        raise ValueError(f"emit_event: 'metrics' com valor não-finito (NaN/inf): "
+                         f"{nao_finitos} — JSON não representa NaN/inf; trate antes de emitir")
     record = {
         "timestamp": timestamp or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "domain": domain,
@@ -65,10 +73,13 @@ def emit_event(domain: str, event: str, *, run_id: str | None = None,
         "metrics": metrics,
         "metadata": metadata,
     }
+    # allow_nan=False: backstop p/ NaN escondido no metadata (dict livre).
+    # Serializa ANTES de abrir: falha de serialização não pode criar/tocar o arquivo.
+    line = json.dumps(record, ensure_ascii=False, allow_nan=False)
     target = Path(path or os.getenv(EVENTS_ENV) or _DEFAULT_EVENTS)
     target.parent.mkdir(parents=True, exist_ok=True)
     with open(target, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        f.write(line + "\n")
     return record
 
 

@@ -44,7 +44,12 @@ class PastView:
             start, stop, step = key.indices(self._i + 1)   # .indices clampa ao passado
             return self._data[start:stop:step]
         idx = key + (self._i + 1) if key < 0 else key
-        if not (0 <= idx <= self._i):
+        if idx < 0:
+            # negativo além do início: passado INEXISTENTE, não lookahead —
+            # IndexError preserva o diagnóstico (LookaheadError é só p/ futuro).
+            raise IndexError(
+                f"índice {key} fora do range do passado (len={self._i + 1})")
+        if idx > self._i:
             raise LookaheadError(
                 f"acesso ao índice {key} (asof={self._i}) — lookahead barrado")
         return self._data[idx]

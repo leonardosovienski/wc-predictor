@@ -94,6 +94,8 @@ def bootstrap_ci(
         raise ValueError(f"scheme desconhecido: {scheme!r} — use um de {_SCHEMES}")
     rng = random.Random(seed)
     n = len(series)
+    if n == 0:
+        raise ValueError("bootstrap_ci: série vazia — nada a reamostrar")
 
     if scheme == "cluster":
         if cluster_key is None:

@@ -20,6 +20,11 @@ import math
 
 __all__ = ["plackett_luce_prob", "fit_plackett_luce", "rank_probabilities"]
 
+# Piso das forças estimadas: o MLE de um item que NUNCA vence posição alguma
+# diverge para 0 no limite, mas w=0 violaria o contrato w>0 que o próprio
+# plackett_luce_prob exige (o fit produziria saída que o módulo rejeita).
+_MIN_STRENGTH = 1e-12
+
 
 def plackett_luce_prob(ranking: list, strengths: dict) -> float:
     """P(ranking) sob Plackett-Luce dado `strengths` = {item: w > 0}.
@@ -83,6 +88,8 @@ def fit_plackett_luce(rankings: list, *, items: list | None = None,
         if logs:
             shift = math.exp(sum(logs) / len(logs))
             new_w = {k: v / shift for k, v in new_w.items()}
+        # piso APÓS a normalização — garante o contrato w>0 mesmo p/ nunca-vencedor
+        new_w = {k: max(v, _MIN_STRENGTH) for k, v in new_w.items()}
         delta = max(abs(new_w[it] - w[it]) for it in universe)
         w = new_w
         if delta < tol:
