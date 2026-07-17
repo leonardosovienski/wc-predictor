@@ -27,10 +27,7 @@ def assert_pipeline_has_power(evaluate_func, edge_generator, noise_generator,
 
     evaluate_func(series) -> dict com chave 'verdict'.
     edge_generator()  -> série COM edge (deve produzir `edge_verdict`).
-    noise_generator() -> série SEM edge (NÃO pode produzir `edge_verdict`;
-                         qualquer outro veredito — `null_verdict`, "INCONCLUSIVO" —
-                         conta como rejeição. `null_verdict` é usado só no
-                         diagnóstico da mensagem de erro, não como exigência).
+    noise_generator() -> série SEM edge (NÃO pode produzir `edge_verdict`).
 
     Levanta PipelineHasNoPowerError se: (a) o edge não for detectado — falso negativo,
     o pipeline é cego; ou (b) o ruído for confirmado — falso positivo, o pipeline
@@ -47,8 +44,7 @@ def assert_pipeline_has_power(evaluate_func, edge_generator, noise_generator,
     if got_noise == edge_verdict:
         raise PipelineHasNoPowerError(
             f"ESPECIFICIDADE falhou: ruído confirmado como edge "
-            f"(verdict={got_noise!r}, esperado {null_verdict!r} ou qualquer "
-            f"não-{edge_verdict!r}) — pipeline fabrica significância.")
+            f"(verdict={got_noise!r}) — pipeline fabrica significância.")
     return True
 
 

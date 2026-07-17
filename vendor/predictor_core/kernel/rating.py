@@ -108,17 +108,12 @@ class RatingBook:
         n = len(ranking)
         if n < 2:
             raise ValueError("record_ranking exige >= 2 entidades")
-        base_k, base_cb = self.k, self.k_factor
+        base_k = self.k
         try:
-            # A divisão por (N-1) precisa valer TAMBÉM com k_factor dinâmico —
-            # `_k_for` prefere o callback, então ele é embrulhado com a mesma escala
-            # (senão uma corrida de N moveria o rating N-1x mais que um 1x1).
             self.k = base_k / (n - 1)
-            if base_cb is not None:
-                self.k_factor = lambda entity: base_cb(entity) / (n - 1)
             for i in range(n):
                 for j in range(i + 1, n):
                     self.record_match(ranking[i], ranking[j], score_a=1.0)
         finally:
-            self.k, self.k_factor = base_k, base_cb
+            self.k = base_k
         return [self.get(name) for name in ranking]

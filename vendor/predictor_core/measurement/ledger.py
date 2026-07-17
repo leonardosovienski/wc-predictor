@@ -23,10 +23,7 @@ from datetime import datetime
 
 __all__ = ["Posting", "Transaction", "Ledger", "UnbalancedTransactionError"]
 
-_EPS = 1e-9        # piso absoluto (amounts pequenos)
-_REL_EPS = 1e-12   # tolerância relativa à magnitude (amounts grandes: erro de
-                   # arredondamento float cresce com a escala — 1e15+0.1-1e15-0.1
-                   # deixa resíduo ~0.025, matematicamente zero)
+_EPS = 1e-9
 
 
 class UnbalancedTransactionError(ValueError):
@@ -67,11 +64,10 @@ class Transaction:
         if len(self.postings) < 2:
             raise ValueError("Transaction exige >= 2 postings (partida dobrada)")
         total = sum(p.amount for p in self.postings)
-        tol = max(_EPS, _REL_EPS * sum(abs(p.amount) for p in self.postings))
-        if abs(total) > tol:
+        if abs(total) > _EPS:
             raise UnbalancedTransactionError(
                 f"transação '{self.narration}' não balanceia: soma={total!r} "
-                f"(esperado 0, tolerância {tol})")
+                f"(esperado 0, tolerância {_EPS})")
 
 
 @dataclass

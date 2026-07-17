@@ -32,10 +32,7 @@ class JsonlStore:
         """Grava `record` como uma linha JSON (compacta, ensure_ascii=False).
         Cria diretórios. `record` precisa ser JSON-serializável — falha ANTES
         de abrir o arquivo (nunca deixa linha truncada para trás)."""
-        # allow_nan=False: NaN/inf virariam literais fora do RFC 8259 — a linha
-        # seria ilegível para parsers estritos (corrupção explícita > silenciosa).
-        line = json.dumps(record, ensure_ascii=False, separators=(",", ":"),
-                          allow_nan=False)
+        line = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.path, "a", encoding="utf-8") as f:
             f.write(line + "\n")

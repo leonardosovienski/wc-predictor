@@ -19,13 +19,7 @@ def connect(db_path: pathlib.Path | str, busy_timeout_ms: int = 5000) -> sqlite3
 
 
 def run_migrations(conn: sqlite3.Connection, migrations: list[tuple[str, str]]) -> None:
-    """Aplica lista de (nome, sql) de forma idempotente via tabela _migrations.
-
-    ATENÇÃO: `executescript` comita a transação pendente ANTES de rodar o script e
-    executa os statements em autocommit — um script que falha no MEIO deixa os
-    statements anteriores aplicados SEM registrar a migração (o retry reexecuta o
-    script inteiro). Escreva cada migração para ser re-executável (CREATE TABLE IF
-    NOT EXISTS, INSERT OR IGNORE) ou uma migração por statement."""
+    """Aplica lista de (nome, sql) de forma idempotente via tabela _migrations."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS _migrations (
             name TEXT PRIMARY KEY,

@@ -113,15 +113,11 @@ def validate_trials(trials: list[dict]) -> list[str]:
             errs.append(f"{tag}: params precisa ser dict NÃO-vazio (a configuração exata "
                         "é o que permite ao DSR distinguir tentativas)")
         sharpe = t.get("sharpe")
-        if sharpe is not None and (isinstance(sharpe, bool)
-                                   or not (isinstance(sharpe, (int, float))
-                                           and math.isfinite(sharpe))):
+        if sharpe is not None and not (isinstance(sharpe, (int, float))
+                                       and math.isfinite(sharpe)):
             errs.append(f"{tag}: sharpe inválido ({sharpe!r}) — None ou número finito")
         if not isinstance(t.get("notes", ""), str):
             errs.append(f"{tag}: notes precisa ser str")
-        metric = t.get("metric")
-        if metric is not None and not (isinstance(metric, str) and metric):
-            errs.append(f"{tag}: metric inválida ({metric!r}) — str não-vazia quando presente")
         for key in ("train_period", "test_period"):
             per = t.get(key)
             if per is not None and not (isinstance(per, list) and len(per) == 2
@@ -181,18 +177,6 @@ def register_trial(name: str, *, params: dict, sharpe: float | None = None,
                     f"trial '{name}' já existe com params DIFERENTES — variação de "
                     "configuração é tentativa nova: registre com um name novo (N+1). "
                     f"registrado={t.get('params')!r} vs proposto={params!r}")
-            # A métrica é a RÉGUA do veredito — trocá-la num update é mudança de
-            # tentativa tanto quanto mudar params (mesma governança N+1). Update
-            # sem `metric` preserva a registrada (não a apaga em silêncio).
-            registrada = t.get("metric")
-            if metric is None:
-                if registrada is not None:
-                    entry["metric"] = registrada
-            elif registrada is not None and metric != registrada:
-                raise ValueError(
-                    f"trial '{name}' já existe com metric={registrada!r} — avaliar a "
-                    f"mesma configuração com outra régua ({metric!r}) é tentativa "
-                    "nova: registre com um name novo (N+1).")
             entry["registered_at"] = t.get("registered_at", stamp)
             trials[i] = entry
             break
@@ -218,11 +202,7 @@ def register_trial(name: str, *, params: dict, sharpe: float | None = None,
     errs = validate_trials(trials)
     if errs:
         raise ValueError("registro violaria o schema de trials: " + "; ".join(errs))
-    # Escrita atômica (tmp + replace): crash no meio do write não pode corromper
-    # o registro inteiro — o denominador do DSR é a memória da governança.
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_text(json.dumps(trials, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(p)
+    p.write_text(json.dumps(trials, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return trials
 
 
