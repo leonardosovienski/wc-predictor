@@ -1,3 +1,18 @@
+> ## STATUS: PARKED (verificado 2026-07-18)
+>
+> Congelado. Vendor de `predictor_core` intencionalmente desatualizado
+> (agregado `3445e37f43c458cc`, drift esperado e correto contra o
+> canônico atual — `sync_core.py --check` confirma). **Proibido**: sync de
+> vendor, atualização automática, migração, adaptação, evolução funcional.
+> Consulta histórica é permitida. Motivo factual do congelamento: encerramento
+> operacional da Copa (dado real-money irreproduzível). Um sync indevido
+> ocorreu por engano em 2026-07-17 (`PARKED` vazio em `sync_core.py` por
+> período) e foi revertido via `git revert` (commit `5efb129`) — nunca
+> publicado. Condição formal para reabrir: decisão humana explícita
+> documentando o motivo, seguida de `sync_core.py --write --target
+> wc-predictor-v2` só depois de remover o nome de `PARKED`. Ver
+> `ECOSYSTEM_HANDOFF.md` para o mapa completo do ecossistema.
+
 > ## 🎫 SPAIN×BELGIUM LIQUIDADO + REVALIDAÇÃO COMPLETA + BETMGM (2026-07-10)
 >
 > **Revalidação comando-a-comando (manhã)**: checklist de 9 itens executado de
