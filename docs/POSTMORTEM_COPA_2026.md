@@ -140,3 +140,52 @@ EV +11,9% — processo certo, variância; 90min 1-2). Casa real de execução: B
 
 Sensibilidade de hiperparâmetros (`docs/HYPERPARAMETERS.md`) e eventual expansão de
 dados (Eliminatórias, Nations League), se ainda fizer sentido.
+
+## 7. Inventário de legado — o que deste projeto serve às outras (2026-07-19)
+
+Auditado antes do selo para nada se perder. Verificação factual: o diff de
+`src/` WC × brasileirão é **vazio no sentido WC→brasileirão** — o herdeiro
+direto carrega 100% dos módulos (motor NB+Dixon-Coles, Shin, CLV com
+bootstrap por cluster, bet_log/banca, settle, odds_shop, market_pricer,
+event_models) e adicionou os seus próprios. Nenhum código se perde com o
+encerramento.
+
+**Já transferido e vivo no ecossistema:**
+- Motor estatístico completo + livro-caixa + aferição → brasileirão (herança
+  integral, confirmada por diff).
+- Conhecimento negativo virou regra: "1X2 nunca" (CLV −16% estrutural),
+  aposta real só em mercado com CLV comprovado do domínio, log append-only
+  ANTES do jogo, pesquisa read-only — são as "Regras inegociáveis" do
+  README do brasileirão. Corners/cards sem edge explorável e features de
+  dominância retratadas (0/45) idem.
+- `initialFractionalValue` como abertura real do Sofascore + janela de edge
+  2-15% (a população OU2.5 com CLV +16% validado aqui é a base da H1 do
+  brasileirão).
+- H6 (modelo de intervalo/entrada no HT) → transferida como conhecimento ao
+  brasileirão (§5).
+
+**Registrado como candidato, aguardando o gatilho certo (nada a fazer agora):**
+- Shin, cliente curl_cffi+impersonate, Platt, motor prequential, harness
+  Brier+DM → candidatos ao core (INC-2 de `PENDENCIAS_ABERTAS.md`, roadmap
+  de agosto), cada um já duplicado em 2-3 domínios.
+- Disciplina de odds snapshot/settlement/CLV → CS/LoL (T02 da auditoria
+  cross-domain, "testar em shadow"): bloqueada por ausência de fonte de odds
+  de e-sports (SCI-7). O dia em que houver fonte, a referência de
+  implementação é ESTE repo.
+
+**Legado que só existe aqui (preservado no repo PARKED, não replicado):**
+- **Playbook de dinheiro real** — a experiência operacional única do
+  ecossistema: odd registrada = odd executada na casa real (lição BetMGM),
+  carimbo de aposta tardia, alerta de duplicata, tratamento de push, a lição
+  da SGP +EV que perdeu (processo certo, variância) e o resultado-síntese:
+  mercado validado +1,14u vs. apostas fora do funil −5,84u. O brasileirão
+  DEVE reler os banners do HANDOFF daqui antes de sair do modo sombra.
+- **Simulador de bracket Monte Carlo** (mata-mata de torneio) — único no
+  ecossistema; se um domínio futuro precisar (Copa 2030, playoffs), está aqui.
+- **Dados irreproduzíveis**: martj42 ~49k jogos + odds da Copa 2026 com
+  snapshots de abertura em `matches.db` (backup congelado no selo) + a
+  produção deletada na Lixeira (decisão §5 pendente).
+- **Lição operacional ecossistêmica** (do §4): nunca servir de worktree;
+  dado gitignored não existe em checkout; "sincronizar" JSONL append-only
+  por cópia inteira é proibido — append é a única operação legítima. Vale
+  para TODOS os projetos com `data/` gitignored.
