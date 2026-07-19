@@ -95,7 +95,10 @@ EV +11,9% — processo certo, variância; 90min 1-2). Casa real de execução: B
   encerramento (§5).
 - Apostas de placar exato registradas manualmente com `"market": "correct_score"`
   (fora do enum do `bet_log`); `banca` funciona, `list`/`summary` podem quebrar
-  (KeyError 'line') — checar antes de usar no relatório.
+  (KeyError 'line') — **checado em 2026-07-19: NÃO quebram.** `list` e `summary`
+  retornam exit 0; o `summary` classifica corretamente `correct_score` (3
+  apostas, −2,90u) e `sgp_draw_under25` (1 aposta, −4,00u) como INFORMATIVO
+  (sem odd de fechamento). Ferramentas aptas para preencher o §1 sem correção.
 - Registro original Argentina×Switzerland (Over 2.5 @2.30 "NordicBet") era placeholder,
   ANULADO com settlement profit=0 — excluir do ROI (nota na própria linha).
 
