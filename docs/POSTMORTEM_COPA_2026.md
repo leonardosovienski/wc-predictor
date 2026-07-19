@@ -14,11 +14,18 @@ Jogos restantes no momento da criação deste esqueleto:
 ## 0. Checklist do congelamento (executar após a final, ~19/07)
 
 - [ ] Último `python -m src.ingest` com o placar da final (e do 3º lugar)
-- [ ] Última aferição: `python -m src.settle <home> <away> <hs> <as>` dos 2 jogos
-      (placar de **90min** no mata-mata, como nos demais)
+- [x] ~~Última aferição dos 2 jogos~~ **parcial (2026-07-19)**: 3º lugar já
+      aferido — France 4-6 England, palpite 0/4 mercados, acumulado 14 jogos
+      (winner 8/14, ou25 6/14, btts 6/14, exato 1/14). Falta só a final.
+      Previsões dos 2 últimos jogos congeladas no ledger ANTES dos respectivos
+      resultados chegarem ao repo (linhas 4-5 do `predictions.jsonl`,
+      19/07 15:19Z e 15:21Z).
+- [ ] Última aferição: `python -m src.settle Spain Argentina <hs> <as>`
+      (placar de **90min**, como nos demais)
 - [ ] Backup datado: `Copy-Item data/matches.db data/matches_copa2026_frozen_YYYYMMDD.db`
 - [ ] Depois disso `matches.db` da Copa **não recebe mais escrita**
-- [ ] Liquidar apostas abertas remanescentes no livro (hoje: nenhuma)
+- [x] Liquidar apostas abertas remanescentes no livro — **nenhuma** (0 abertas,
+      confirmado 19/07 via `bet_log banca`)
 
 ## 1. Métricas pré-registradas (playbook §4 — preencher pós-congelamento)
 
@@ -102,17 +109,32 @@ EV +11,9% — processo certo, variância; 90min 1-2). Casa real de execução: B
 - Registro original Argentina×Switzerland (Over 2.5 @2.30 "NordicBet") era placeholder,
   ANULADO com settlement profit=0 — excluir do ROI (nota na própria linha).
 
-## 5. Decisões a tomar no post-mortem
+## 5. Decisões do post-mortem (TOMADAS em 2026-07-19, exceto onde indicado)
 
-- **Promoção do shadow** (SHADOW.md): promover os fixes (simulador DC-grid + seed,
-  paridade train/serve no backtest, telemetria) à produção `../wc-predictor` e
-  descomissionar o v2. Mandato libera após ~19/07.
-- **Go/No-Go da v3** — critérios em `docs/V3_READINESS.md`.
-- Reconciliar `src/bootstrap.py` e `src/research/score_metrics.py` com o core por
-  validação de TOLERÂNCIA (congelados até aqui por mandato do playbook).
-- Adoção do TrialRegistry + harness do core v1.3.0 (edge sintético no funil O/U) —
-  passo obrigatório antes do modelo de 2T condicionado ao HT.
-- Candidata H6 (modelo de intervalo / entrada no HT) — ver HANDOFF 2026-07-11.
+- **Promoção do shadow** — **SEM OBJETO.** A investigação forense do §4 provou
+  que a produção `../wc-predictor` (na verdade `Downloads\wc-predictor`) foi
+  deletada para a Lixeira em 2026-06-26T17:56Z. Não há para onde promover nem
+  o que descomissionar: o v2 é o herdeiro único e permanece como registro
+  histórico PARKED do ecossistema. O plano do SHADOW.md fica marcado como
+  histórico.
+- **Go/No-Go da v3** — **NÃO RETOMADA; arquivada com o projeto.** O gate
+  estatístico nunca pôde rodar (seasons 2021-22 inexistentes no banco,
+  survival_test quebrado no modo híbrido — ver `docs/V3_READINESS.md`, que
+  permanece como registro honesto). Retomada futura exigiria decisão humana
+  explícita + hipótese formalizada, o padrão do ecossistema.
+- **Reconciliação bootstrap/score_metrics × core** — **NÃO REALIZADA, por
+  decisão.** Só se justificaria com projeto vivo; o encerramento a torna sem
+  benefício. O código local permanece congelado como está.
+- **TrialRegistry + harness (pré-requisito do modelo de 2T)** — **SEM OBJETO**
+  com o encerramento; não haverá modelo de 2T neste repo.
+- **Candidata H6 (modelo de intervalo / entrada no HT)** — **não aberta aqui;
+  conhecimento transferido.** A ideia sobrevive no ecossistema: o
+  brasileirao-predictor já trabalha mercados de 1T (H2 informativa) e é o
+  destino natural se a hipótese for formalizada um dia.
+- **Restauração da produção deletada (Lixeira)** — **DECISÃO HUMANA PENDENTE**
+  (única além da final): restaurar `Downloads\wc-predictor` da Lixeira como
+  arquivo morto (preserva o `matches.db` do cron de odds) ou deixar expirar.
+  Registrar a escolha aqui quando tomada.
 
 ## 6. Só DEPOIS do post-mortem
 

@@ -1,3 +1,14 @@
+> ## 🏁 ENCERRAMENTO EM ANDAMENTO (2026-07-19) — falta SÓ a final
+>
+> A Copa 2026 termina hoje (Spain × Argentina). O encerramento formal está
+> pré-registrado e quase todo executado em `docs/POSTMORTEM_COPA_2026.md`:
+> incidentes de integridade investigados (causa raiz do truncamento do
+> predictions.jsonl provada), decisões do §5 tomadas (promoção sem objeto —
+> a produção original foi deletada em 26/06; v3 arquivada), livro fechado
+> (0 apostas abertas, banca R$ 708). Pendente apenas: ingest/settle da
+> final → backup congelado → métricas do §1 → veredito. Suíte atual: 237
+> verdes. Banners abaixo são registro histórico.
+
 > ## 📌 ESTADO ATUAL (2026-07-09) — fonte da verdade: HANDOFF.md
 >
 > Operando **dinheiro real** nas quartas da Copa 2026 (banca R$ 1.067,50 após 2/2

@@ -1,5 +1,12 @@
 # wc-predictor-v2 — Shadow Deployment (NÃO é a produção)
 
+> **STATUS: HISTORICAL (2026-07-19).** O plano de promoção abaixo ficou SEM
+> OBJETO: a produção `../wc-predictor` (real: `Downloads\wc-predictor`) foi
+> deletada para a Lixeira do Windows em 2026-06-26 — provado na investigação
+> forense do encerramento (`docs/POSTMORTEM_COPA_2026.md` §4-§5). Este repo
+> (v2) é o herdeiro único. A suíte citada abaixo (81) é da época; a atual tem
+> 237 verdes. Fonte da verdade: `HANDOFF.md` e o POSTMORTEM.
+
 > Este repositório é um **clone-sombra** do `wc-predictor` de produção, criado em
 > 2026-06-16 para aplicar os fixes da auditoria **sem tocar na produção** enquanto o
 > cron da Copa 2026 coleta aberturas de odds (dado irreproduzível, até ~19/07).

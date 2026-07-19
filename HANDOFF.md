@@ -1,3 +1,18 @@
+> ## STATUS: PARKED — ENCERRAMENTO EM ANDAMENTO (2026-07-19, falta só a final)
+>
+> Decisão humana explícita do operador (19/07): encerrar o projeto. Tudo que
+> não depende da final já foi executado — ver `docs/POSTMORTEM_COPA_2026.md`:
+> §4 fechado (causa raiz do truncamento provada por forense; ferramentas de
+> relatório verificadas), §5 decidido (promoção SEM OBJETO — produção
+> original deletada em 26/06, na Lixeira; v3 arquivada; reconciliações
+> canceladas; H6 transferida como conhecimento ao brasileirão), 3º lugar
+> aferido (France 4-6 England, 0/4), previsões dos 2 últimos jogos congeladas
+> no ledger. Pendentes: resultado da final → checklist §0 (ingest, settle,
+> backup congelado, selo) → métricas §1 → veredito final. Única outra decisão
+> humana aberta: restaurar ou não a produção deletada da Lixeira. O bloco
+> PARKED abaixo permanece válido (vendor congelado, sem evolução funcional —
+> encerramento é settle+docs, não código).
+
 > ## STATUS: PARKED (verificado 2026-07-18)
 >
 > Congelado. Vendor de `predictor_core` intencionalmente desatualizado
