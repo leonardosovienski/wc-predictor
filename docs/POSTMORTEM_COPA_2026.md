@@ -32,8 +32,16 @@ Jogos restantes no momento da criação deste esqueleto:
       placar exato 1×1 ✗ — o 0×0 real era o 2º mais provável do modelo,
       10,7%). **Aferição final da Copa, 15 jogos: winner 8/15 (53%),
       OU2,5 7/15 (47%), BTTS 7/15 (47%), placar exato 1/15 (7%).**
-- [ ] Backup datado: `Copy-Item data/matches.db data/matches_copa2026_frozen_YYYYMMDD.db`
-- [ ] Depois disso `matches.db` da Copa **não recebe mais escrita**
+- [x] Backup datado: **FEITO** — `data/matches_copa2026_frozen_20260719.db`
+      (13.631.488 bytes). Nota de desvio documentado: o placar da final
+      (Spain 0-0 Argentina, 90min) foi inserido MANUALMENTE no banco por
+      ordem explícita do operador ("fecha já"), porque a fonte martj42
+      ainda não o havia publicado no momento do congelamento; valor
+      idêntico ao aferido em `results.jsonl` e conferível contra a fonte
+      quando ela atualizar.
+- [x] Depois disso `matches.db` da Copa **não recebe mais escrita** —
+      selado em 2026-07-19 ~19:15 BRT (artefatos derivados de pesquisa
+      como `backtest_bets.csv`/`bootstrap_cache.json` não são o banco)
 - [x] Liquidar apostas abertas remanescentes no livro — **nenhuma** (0 abertas,
       confirmado 19/07 via `bet_log banca`)
 
@@ -42,11 +50,53 @@ Jogos restantes no momento da criação deste esqueleto:
 As fatias são SOMENTE as pré-registradas: total, 1X2, OU2.5. Fatia nova = exploratória,
 fora do veredito. Expectativa declarada no playbook: **o mercado vence** (~0.57 vs ~0.49).
 
-1. **Brier 1X2 / log-loss** modelo vs mercado Shin do fechamento, nos 104 jogos: _TODO_
-2. **CLV** da população `bet_at='open'` com IC por cluster de jogo (`python -m src.bootstrap`): _TODO_
-3. **P&L real** (`data/bets.jsonl` + `live_decisions.csv`): n, stake total, IC — sem recorte a posteriori: _TODO_
-4. **Calibração** por faixa de probabilidade (tabela do backtest) + curva do simulador (qualitativo): _TODO_
-5. Revalidação do `initialFractionalValue` contra os snapshots `pre_match=1` acumulados: _TODO_
+**PREENCHIDAS em 2026-07-19, pós-congelamento, com as ferramentas
+pré-registradas** (`src.backtest` + `src.bootstrap`, banco congelado
+`matches_copa2026_frozen_20260719.db`):
+
+1. **Brier 1X2 modelo vs mercado**: não reduzido a um par único de números
+   nesta execução (nenhuma ferramenta pré-registrada o imprime diretamente;
+   criar análise nova no fechamento violaria o pré-registro). Evidência
+   equivalente e conclusiva: CLV 1X2 **−15,77% [−20,65%, −10,95%]
+   SIGNIFICATIVO** — o mercado vence no 1X2, exatamente a expectativa
+   declarada do playbook. A tabela de calibração (item 4) mostra
+   sobreconfiança crescente por faixa de edge.
+2. **CLV população `open` (n=499 apostas, 130 jogos), IC por cluster**:
+   total **−8,37% [−11,49%, −4,85%] SIGNIFICATIVO** (sem edge agregado);
+   1X2 −15,77% (sig. negativo); **OU2,5 +16,92% [+11,55%, +22,77%]
+   SIGNIFICATIVO** — o único edge comprovado do domínio sobreviveu à Copa
+   inteira. Por faixa de edge: 0-5% −12,0% (sig.), 5-10% −10,2% (sig.),
+   10-15% +7,2% (cruza zero).
+3. **P&L real**: −5,84u = −R$ 292,00 em 10 apostas fechadas (banca
+   R$ 1.000 → R$ 708; aposta anulada excluída; 0 abertas). Decomposição
+   honesta: mercado validado OU2,5 **+1,14u (ROI +28,5%)**; todo o
+   prejuízo veio de apostas fora do funil (placar exato −2,90u, SGP
+   −4,00u, informativas 1T −0,08u). n pequeno demais para IC — reportado
+   como contabilidade, não como inferência.
+4. **Calibração por faixa de edge (backtest, paridade train/serve)**:
+   0-5%: prob média 36,4% vs acerto real 32,2% (n=239); 5-10%: 42,5% vs
+   32,8% (n=183); 10-15%: 44,8% vs 36,4% (n=77) — sobreconfiança em toda
+   faixa, pior nas altas. ROI do backtest: todas as fatias com IC 95%
+   cruzando zero (variância domina; sem significância econômica).
+5. **Revalidação do `initialFractionalValue`**: NÃO reexecutada no
+   fechamento — validação anterior (2026-07-10, revalidação de 9 itens)
+   mantida como evidência; registrado como limitação honesta, não como
+   confirmação nova.
+
+### VEREDITO FINAL DA COPA 2026
+
+**A expectativa pré-registrada do playbook confirmou-se: o mercado vence
+no agregado.** CLV total significativamente negativo; 1X2 com viés de
+achatamento estrutural confirmado do primeiro ao último jogo. **A exceção
+real, comprovada e sustentada é o Over/Under 2,5** (CLV +16,9%
+significativo, n=78 em 78 jogos) — edge de preço genuíno, mas sem volume
+suficiente na Copa para significância econômica (ROI com IC cruzando
+zero; P&L real do funil +1,14u). A herança científica é exatamente essa
+população, já transferida como base da H1 do brasileirao-predictor (§7).
+O prejuízo real da banca (−5,84u) veio integralmente de apostas fora do
+funil validado — a lição operacional definitiva do projeto.
+
+**wc-predictor: ENCERRADO em 2026-07-19.**
 
 ## 2. Aferição parcial (fotografia de 2026-07-16, PRÉ-congelamento — não é veredito)
 

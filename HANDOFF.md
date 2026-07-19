@@ -1,3 +1,17 @@
+> ## 🏁 STATUS: ENCERRADO (2026-07-19) — Copa 2026 completa, veredito emitido
+>
+> **Projeto formalmente encerrado.** A final (Spain 0-0 Argentina em 90min;
+> Espanha campeã 1-0 na prorrogação) foi aferida (2/4), o banco foi
+> congelado (`data/matches_copa2026_frozen_20260719.db`) e as métricas
+> pré-registradas foram preenchidas com veredito final — ver
+> `docs/POSTMORTEM_COPA_2026.md` (documento definitivo do encerramento).
+> Síntese: o mercado vence no agregado (CLV −8,4% sig.); exceção comprovada
+> OU2,5 (CLV +16,9% sig.), herdada pelo brasileirao-predictor; P&L real
+> −5,84u, todo o prejuízo fora do funil validado. Legado inventariado no
+> §7 do POSTMORTEM. O repo permanece PARKED como registro histórico —
+> vendor congelado, nenhuma evolução funcional; GitHub: `wc-predictor`
+> (privado). Bloco de encerramento-em-andamento abaixo é registro da época.
+
 > ## STATUS: PARKED — ENCERRAMENTO EM ANDAMENTO (2026-07-19, falta só a final)
 >
 > Decisão humana explícita do operador (19/07): encerrar o projeto. Tudo que
