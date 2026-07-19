@@ -67,7 +67,32 @@ EV +11,9% — processo certo, variância; 90min 1-2). Casa real de execução: B
   Mitigação: as predições das oitavas + 3 quartas sobrevivem embutidas em
   `data/results.jsonl`; o envelope 1X2 de todas está na telemetria (`events.jsonl`).
   Perda real: o palpite completo pré-jogo de Norway×England (grade de placares/OU).
-  Causa raiz: _TODO investigar_ (nenhuma rotação de predictions.jsonl existe no código).
+  **Causa raiz (investigada e confirmada em 2026-07-19, evidência forense em
+  transcripts/telemetria/reflog):** não foi truncamento — foi **sobrescrita por
+  cópia**. Em 2026-07-12T08:14:24Z, uma sessão de assistente que servia previsões
+  de dentro do worktree `.claude/worktrees/wc-predictor-betting-4d2eaf` (que não
+  tinha `data/` — gitignored não vem no checkout; a sessão criou `data/` do zero
+  às 07:56:18Z e o `prever.py` de lá gerou um `predictions.jsonl` novo com 2
+  linhas) executou `cp <worktree>/data/predictions.jsonl <principal>/data/predictions.jsonl`
+  ("synced"), clobberando o arquivo principal com todo o histórico. O worktree
+  foi removido às 10:10:41Z da mesma sessão. O código é inocente (só abre em
+  `"a"`); git é inocente (reflog silencioso na janela; arquivo nunca rastreado);
+  o operador é inocente (histórico do PowerShell sem deleções). Mesma classe do
+  incidente de 07/07 ("dado ignorado tratado como descartável"), mas o guard
+  `test_repo_hygiene.py` protege código do `.gitignore`, não dados de fluxos
+  com worktree. Lição estrutural: servir SEMPRE do repo principal (ou apontar
+  `PREDICTIONS_LOG_PATH` para o arquivo principal); nunca "sincronizar" um
+  JSONL append-only por cópia inteira — append é a única operação legítima.
+  Recuperação total: impossível (a cópia destruiu o único original); as
+  mitigações acima são o que existe.
+- **Achado lateral da mesma investigação**: a produção original
+  (`C:\Users\Superleo13\Downloads\wc-predictor`) foi deletada para a Lixeira do
+  Windows em **2026-06-26T17:56Z** e ainda estava lá em 19/07 — potencialmente
+  restaurável (incluindo o `data/matches.db` do cron de odds). Isso explica a
+  contradição histórica do SHADOW.md: a promoção pós-Copa planejada ficou sem
+  objeto porque a produção deixou de existir em 26/06; o v2 é o único
+  sobrevivente. Decisão sobre restaurar ou deixar expirar: humana, no
+  encerramento (§5).
 - Apostas de placar exato registradas manualmente com `"market": "correct_score"`
   (fora do enum do `bet_log`); `banca` funciona, `list`/`summary` podem quebrar
   (KeyError 'line') — checar antes de usar no relatório.
