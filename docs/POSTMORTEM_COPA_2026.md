@@ -90,8 +90,17 @@ EV +11,9% — processo certo, variância; 90min 1-2). Casa real de execução: B
   com worktree. Lição estrutural: servir SEMPRE do repo principal (ou apontar
   `PREDICTIONS_LOG_PATH` para o arquivo principal); nunca "sincronizar" um
   JSONL append-only por cópia inteira — append é a única operação legítima.
-  Recuperação total: impossível (a cópia destruiu o único original); as
-  mitigações acima são o que existe.
+  ~~Recuperação total: impossível (a cópia destruiu o único original); as
+  mitigações acima são o que existe.~~ **ATUALIZAÇÃO (2026-07-19): RECUPERADO
+  EM GRANDE PARTE.** A restauração da Lixeira (decisão §5) revelou um backup
+  integral do v2 em `E:\wc-predictor-v2` (deletado 12/07 23:47 BRT, restaurado
+  19/07) cujo `data/predictions.jsonl` preserva **28 predições de 04/07 a
+  07/07 23:11Z** — incluindo o pacote completo pré-jogo de Norway×England
+  (2 registros, 07/07). Cópia versionada em
+  `docs/recovered_predictions_backup_e_20260707.jsonl`. Perda líquida final:
+  apenas o refresh de 11/07 20:45Z pré-apito (Elo pós-2-quartas), cujo
+  envelope 1X2 sobrevive na telemetria. O ledger atual (pós-clobber) NÃO foi
+  tocado — os dois arquivos coexistem, cada um com sua proveniência.
 - **Achado lateral da mesma investigação**: a produção original
   (`C:\Users\Superleo13\Downloads\wc-predictor`) foi deletada para a Lixeira do
   Windows em **2026-06-26T17:56Z** e ainda estava lá em 19/07 — potencialmente
@@ -131,10 +140,16 @@ EV +11,9% — processo certo, variância; 90min 1-2). Casa real de execução: B
   conhecimento transferido.** A ideia sobrevive no ecossistema: o
   brasileirao-predictor já trabalha mercados de 1T (H2 informativa) e é o
   destino natural se a hipótese for formalizada um dia.
-- **Restauração da produção deletada (Lixeira)** — **DECISÃO HUMANA PENDENTE**
-  (única além da final): restaurar `Downloads\wc-predictor` da Lixeira como
-  arquivo morto (preserva o `matches.db` do cron de odds) ou deixar expirar.
-  Registrar a escolha aqui quando tomada.
+- **Restauração da produção deletada (Lixeira)** — **DECIDIDA E EXECUTADA
+  (2026-07-19, ordem do operador)**: os 3 itens `wc-predictor*` da Lixeira
+  foram restaurados. Resultado: (a) `Downloads\wc-predictor` (a "produção")
+  revelou-se um snapshot SÓ de código de ~06/2026, sem `.git` e sem `data/` —
+  o mito do "banco de odds do cron na produção" está desfeito; snapshot
+  preservado versionado em `archive/wc-predictor-producao-original/`;
+  (b) `wc-predictor-final.zip` restaurado em Downloads;
+  (c) **`E:\wc-predictor-v2` (331 MB, backup integral de ~07/07)** — o achado
+  real: recuperou o ledger de predições perdido (ver §4). Backup mantido em
+  E:\ como arquivo morto adicional.
 
 ## 6. Só DEPOIS do post-mortem
 

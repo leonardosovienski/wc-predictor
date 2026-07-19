@@ -1,0 +1,84 @@
+source:
+  url: https://raw.githubusercontent.com/martj42/international_results/master/results.csv
+  local_fallback: data/results.csv
+
+database: data/matches.db
+
+elo:
+  initial_rating: 1500
+  home_advantage: 100
+  # corte duro: só partidas dos últimos N anos entram no cálculo. Nada antes.
+  window_years: 6
+  # meia-vida da "memória" em anos: resultado dessa idade pesa 50%.
+  # 4.0 reage a forma recente mantendo sanidade do ranking; 2.0 fica ruidoso
+  # (super-pondera um único torneio), null = sem decay (memória longa).
+  form_half_life_years: 4.0
+  k_factors:
+    "FIFA World Cup": 60
+    "FIFA World Cup qualification": 40
+    "UEFA Euro": 50
+    "Copa América": 50
+    "African Cup of Nations": 50
+    "AFC Asian Cup": 50
+    "CONCACAF Gold Cup": 50
+    "UEFA Nations League": 40
+    "CONCACAF Nations League": 40
+    "Confederations Cup": 50
+    default: 30
+    "Friendly": 20
+
+model:
+  # calibra o Poisson só na forma recente — futebol de 2005 não informa 2026
+  calibration_window_years: 4
+  max_goals: 12
+
+backtest:
+  # janela de edge apostável: estanca o sangramento das duas extremidades.
+  # < min_edge = ruído engolido pelo vig; > max_edge = informação ausente no
+  # modelo (lesão, time misto). O sweet spot validado fica no meio.
+  min_edge: 0.02
+  max_edge: 0.15
+  over_under_line: 2.5   # linha principal de gols auditada além do 1X2
+  # bootstrap de significância (python -m src.bootstrap) — IC 95% da média
+  bootstrap_iterations: 1000
+  bootstrap_seed: 13
+
+player_stats:
+  cache_dir: data/fbref_cache
+  rate_limit_seconds: 4
+  # URLs do FBref — competições com xG via Opta (cobertura confirmada)
+  competitions:
+    - name: World Cup
+      season: "2022"
+      url: https://fbref.com/en/comps/1/2022/stats/2022-World-Cup-Stats
+    - name: UEFA Euro
+      season: "2024"
+      url: https://fbref.com/en/comps/676/2024/stats/2024-UEFA-Euro-Stats
+
+sofascore:
+  cache_dir: data/sofascore_cache
+  rate_limit_seconds: 1.5
+  # descubra o season_id de cada competição com:
+  #   python -m src.ingest_sofascore --seasons UT_ID
+  # ut_id (unique-tournament): World Cup=16, Euro=1, Copa America=133 (confirme)
+  competitions:
+    - name: World Cup
+      season: "2022"
+      ut_id: 16
+      season_id: 41087
+    - name: World Cup 2026
+      season: "2026"
+      ut_id: 16
+      season_id: 58210
+      upcoming: true   # coleta odds dos fixtures futuros (pra comparar vs modelo)
+    # --- para engordar o backtest, descubra o season_id e descomente ---
+    #   python -m src.ingest_sofascore --seasons 1     # Euro
+    #   python -m src.ingest_sofascore --seasons 133   # Copa America
+    # - name: Euro 2024
+    #   season: "2024"
+    #   ut_id: 1
+    #   season_id: 0     # <-- preencha com o id de 2024
+    # - name: Copa America 2024
+    #   season: "2024"
+    #   ut_id: 133
+    #   season_id: 0     # <-- preencha com o id de 2024

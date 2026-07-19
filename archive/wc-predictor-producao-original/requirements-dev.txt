@@ -1,0 +1,5 @@
+# Dependências SÓ de desenvolvimento (não entram no runtime). Instale com:
+#   pip install -r requirements-dev.txt
+# Mantido separado de requirements.txt pela mesma regra que recusou loguru/tenacity:
+# o que roda em produção não carrega peso de teste.
+pytest==9.0.3
