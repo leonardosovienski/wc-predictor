@@ -13,15 +13,25 @@ Jogos restantes no momento da criação deste esqueleto:
 
 ## 0. Checklist do congelamento (executar após a final, ~19/07)
 
-- [ ] Último `python -m src.ingest` com o placar da final (e do 3º lugar)
+- [~] Último `python -m src.ingest` com o placar da final (e do 3º lugar) —
+      **parcial (19/07 19:09 BRT)**: 3º lugar (France 4-6 England) ingerido da
+      fonte; a FINAL (Spain 0-0 Argentina em 90min; 1-0 Espanha na prorrogação,
+      campeã) ainda não publicada no martj42 — banco com 1 fixture pendente.
+      **Reexecutar o ingest quando a fonte atualizar (~24h) e só então
+      congelar.** A aferição oficial da final JÁ está gravada (ver abaixo) —
+      o settle não depende do banco.
 - [x] ~~Última aferição dos 2 jogos~~ **parcial (2026-07-19)**: 3º lugar já
       aferido — France 4-6 England, palpite 0/4 mercados, acumulado 14 jogos
       (winner 8/14, ou25 6/14, btts 6/14, exato 1/14). Falta só a final.
       Previsões dos 2 últimos jogos congeladas no ledger ANTES dos respectivos
       resultados chegarem ao repo (linhas 4-5 do `predictions.jsonl`,
       19/07 15:19Z e 15:21Z).
-- [ ] Última aferição: `python -m src.settle Spain Argentina <hs> <as>`
-      (placar de **90min**, como nos demais)
+- [x] Última aferição: **FEITA (19/07)** — `settle Spain Argentina 0 0`
+      (90min; Espanha campeã 1-0 na prorrogação). Palpite da final: **2/4**
+      (Under 2,5 ✓ e BTTS Não ✓; vencedor nominal Spain ✗ em 90min = empate;
+      placar exato 1×1 ✗ — o 0×0 real era o 2º mais provável do modelo,
+      10,7%). **Aferição final da Copa, 15 jogos: winner 8/15 (53%),
+      OU2,5 7/15 (47%), BTTS 7/15 (47%), placar exato 1/15 (7%).**
 - [ ] Backup datado: `Copy-Item data/matches.db data/matches_copa2026_frozen_YYYYMMDD.db`
 - [ ] Depois disso `matches.db` da Copa **não recebe mais escrita**
 - [x] Liquidar apostas abertas remanescentes no livro — **nenhuma** (0 abertas,
